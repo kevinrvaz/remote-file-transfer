@@ -1,0 +1,188 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>Dialog</class>
+ <widget class="QDialog" name="Dialog">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>665</width>
+    <height>627</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>Send Files</string>
+  </property>
+  <property name="styleSheet">
+   <string notr="true">#Dialog {
+	background-color: white;
+}</string>
+  </property>
+  <widget class="QWidget" name="verticalLayoutWidget">
+   <property name="geometry">
+    <rect>
+     <x>20</x>
+     <y>160</y>
+     <width>624</width>
+     <height>411</height>
+    </rect>
+   </property>
+   <layout class="QVBoxLayout" name="verticalLayout">
+    <item>
+     <layout class="QHBoxLayout" name="horizontalLayout">
+      <item>
+       <widget class="QPushButton" name="genIP">
+        <property name="toolTip">
+         <string>Click to generate an ip to share with the receiver</string>
+        </property>
+        <property name="styleSheet">
+         <string notr="true">#genIP {
+	font-size: 20px;
+	color: red;
+	border: 2px solid red;
+	background-color: white;
+	padding: 10px auto;
+	border-radius: 10px;
+}
+
+#genIP:hover {
+	background-color: red;
+	color: white;
+}</string>
+        </property>
+        <property name="text">
+         <string>Generate IPv4 address</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QLabel" name="ipLabel">
+        <property name="styleSheet">
+         <string notr="true">#ipLabel {
+	font-size: 20px;
+}</string>
+        </property>
+        <property name="text">
+         <string>e.g. 127.0.0.1</string>
+        </property>
+        <property name="alignment">
+         <set>Qt::AlignCenter</set>
+        </property>
+       </widget>
+      </item>
+     </layout>
+    </item>
+    <item>
+     <layout class="QHBoxLayout" name="horizontalLayout_2">
+      <item>
+       <widget class="QLabel" name="labelFileLocation">
+        <property name="styleSheet">
+         <string notr="true">#labelFileLocation {
+	font-size: 20px;
+}</string>
+        </property>
+        <property name="text">
+         <string>Enter File Location</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QLineEdit" name="lineEditFileLocation">
+        <property name="toolTip">
+         <string>Enter the absolute path of the file to be transfered, incase of multiple files share the location of the compressed file.</string>
+        </property>
+        <property name="styleSheet">
+         <string notr="true">#lineEditFileLocation {
+	margin: 5px auto;
+	padding: 5px auto;
+}</string>
+        </property>
+       </widget>
+      </item>
+     </layout>
+    </item>
+    <item>
+     <widget class="QPushButton" name="sendButton">
+      <property name="toolTip">
+       <string>Begin transmission of files to the receiver</string>
+      </property>
+      <property name="styleSheet">
+       <string notr="true">#sendButton {
+	margin: 20px 200px;
+	background-color: white;
+	color: blue;
+	padding: 10px auto;
+	border: 2px solid blue;
+	border-radius: 10px;
+	font-size: 20px;
+}
+
+#sendButton:hover {
+	color: white;
+	background-color: blue;
+}</string>
+      </property>
+      <property name="text">
+       <string>Send</string>
+      </property>
+     </widget>
+    </item>
+    <item>
+     <widget class="QLabel" name="labelProgress">
+      <property name="styleSheet">
+       <string notr="true">#labelProgress {
+	font-size: 20px;
+	color: green;
+	background-color: white;
+}</string>
+      </property>
+      <property name="text">
+       <string>Transfer Progress</string>
+      </property>
+      <property name="alignment">
+       <set>Qt::AlignCenter</set>
+      </property>
+     </widget>
+    </item>
+    <item>
+     <widget class="QProgressBar" name="progressBar">
+      <property name="styleSheet">
+       <string notr="true"/>
+      </property>
+      <property name="value">
+       <number>0</number>
+      </property>
+     </widget>
+    </item>
+   </layout>
+  </widget>
+  <widget class="QLabel" name="label">
+   <property name="geometry">
+    <rect>
+     <x>0</x>
+     <y>50</y>
+     <width>641</width>
+     <height>61</height>
+    </rect>
+   </property>
+   <property name="font">
+    <font>
+     <pointsize>-1</pointsize>
+    </font>
+   </property>
+   <property name="styleSheet">
+    <string notr="true">#label {
+	font-size: 40px;
+}</string>
+   </property>
+   <property name="text">
+    <string>Remote File Sharing</string>
+   </property>
+   <property name="alignment">
+    <set>Qt::AlignCenter</set>
+   </property>
+  </widget>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>

@@ -1,0 +1,7 @@
+<!DOCTYPE RCC>
+<RCC version="1.0">
+    <qresource>
+        <file>download-solid.svg</file>
+        <file>upload-solid.svg</file>
+    </qresource>
+</RCC>

@@ -1,0 +1,144 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>Dialog</class>
+ <widget class="QDialog" name="Dialog">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>640</width>
+    <height>480</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>Remote Files Sharing</string>
+  </property>
+  <property name="styleSheet">
+   <string notr="true">#Dialog {
+	margin: 0 auto;
+	padding: 0 auto;
+	background-color: white;
+}</string>
+  </property>
+  <widget class="QWidget" name="verticalLayoutWidget">
+   <property name="geometry">
+    <rect>
+     <x>169</x>
+     <y>170</y>
+     <width>301</width>
+     <height>141</height>
+    </rect>
+   </property>
+   <layout class="QVBoxLayout" name="verticalLayout">
+    <item>
+     <widget class="QPushButton" name="sendFiles">
+      <property name="font">
+       <font>
+        <pointsize>-1</pointsize>
+       </font>
+      </property>
+      <property name="styleSheet">
+       <string notr="true">#sendFiles {
+	background-color: white;
+	font-size: 20px;
+	color: blue;
+	padding: 10px auto;
+	border: 2px solid blue;
+	border-radius: 10px;
+	text-align: center;
+}
+
+#sendFiles:hover {
+	color: white;
+	background-color: blue;
+}</string>
+      </property>
+      <property name="text">
+       <string> Send Files</string>
+      </property>
+      <property name="icon">
+       <iconset>
+        <normaloff>../assets/upload-solid.svg</normaloff>../assets/upload-solid.svg</iconset>
+      </property>
+      <property name="iconSize">
+       <size>
+        <width>24</width>
+        <height>24</height>
+       </size>
+      </property>
+      <property name="flat">
+       <bool>true</bool>
+      </property>
+     </widget>
+    </item>
+    <item>
+     <widget class="QPushButton" name="receiveFiles">
+      <property name="font">
+       <font>
+        <pointsize>-1</pointsize>
+       </font>
+      </property>
+      <property name="styleSheet">
+       <string notr="true">#receiveFiles {
+	background-color: white;
+	padding: 10px auto;
+	font-size: 20px;
+	color: red;
+	border: 2px solid red;
+	border-radius: 10px;
+}
+
+#receiveFiles:hover {
+	background-color: red;
+	color: white;
+}</string>
+      </property>
+      <property name="text">
+       <string> Receive Files</string>
+      </property>
+      <property name="icon">
+       <iconset>
+        <normaloff>../assets/download-solid.svg</normaloff>../assets/download-solid.svg</iconset>
+      </property>
+      <property name="iconSize">
+       <size>
+        <width>24</width>
+        <height>24</height>
+       </size>
+      </property>
+     </widget>
+    </item>
+   </layout>
+  </widget>
+  <widget class="QLabel" name="label">
+   <property name="geometry">
+    <rect>
+     <x>0</x>
+     <y>60</y>
+     <width>641</width>
+     <height>61</height>
+    </rect>
+   </property>
+   <property name="font">
+    <font>
+     <pointsize>-1</pointsize>
+    </font>
+   </property>
+   <property name="styleSheet">
+    <string notr="true">#label {
+	font-size: 40px;
+}</string>
+   </property>
+   <property name="text">
+    <string>Remote File Sharing</string>
+   </property>
+   <property name="alignment">
+    <set>Qt::AlignCenter</set>
+   </property>
+  </widget>
+ </widget>
+ <resources>
+  <include location="../assets/icons.qrc"/>
+ </resources>
+ <connections/>
+</ui>
