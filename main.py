@@ -47,6 +47,10 @@ class SendFiles(QDialog):
         self.ui.sendButton.clicked.connect(self.send_files)
 
     def generate_server_ip(self):
+        ip = self.get_ip()
+        self.ui.ipLabel.setText(f"{ip}")
+
+    def get_ip(self):
         ip = "127.0.0.1"
         if platform.system() == "Windows":
             for iface in ni.interfaces():
@@ -59,11 +63,11 @@ class SendFiles(QDialog):
                             ip = ip_add
         else:
             ip = ni.ifaddresses("wlp2s0")[ni.AF_INET][0]["addr"]
-        self.ui.ipLabel.setText(f"{ip}")
+        return ip
 
     def send_files(self):
         file_location = self.ui.lineEditFileLocation.text()
-        ip = ni.ifaddresses("wlp2s0")[ni.AF_INET][0]["addr"]
+        ip = self.get_ip()
         sender = Sender(ip, file_location)
         sender_thread = threading.Thread(target=sender.send_data, args=(self,))
         sender_thread.start()
