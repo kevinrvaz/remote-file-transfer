@@ -8,6 +8,7 @@ import ui.startup
 
 import netifaces as ni
 import threading
+import platform
 import sys
 
 
@@ -41,11 +42,23 @@ class SendFiles(QDialog):
         self.ui.setupUi(self)
         self.show()
 
+        self.windows = list()
         self.ui.genIP.clicked.connect(self.generate_server_ip)
         self.ui.sendButton.clicked.connect(self.send_files)
 
     def generate_server_ip(self):
-        ip = ni.ifaddresses("wlp2s0")[ni.AF_INET][0]["addr"]
+        ip = "127.0.0.1"
+        if platform.system() == "Windows":
+            for iface in ni.interfaces():
+                iface_details = ni.ifaddresses(iface)
+            if ni.AF_INET in iface_details:
+                print(iface_details[ni.AF_INET])
+                for ip_interfaces in iface_details[ni.AF_INET]:
+                    for key, ip_add in ip_interfaces.items():
+                        if key == 'addr' and ip_add != '127.0.0.1':
+                            ip = ip_add
+        else:
+            ip = ni.ifaddresses("wlp2s0")[ni.AF_INET][0]["addr"]
         self.ui.ipLabel.setText(f"{ip}")
 
     def send_files(self):
@@ -64,6 +77,7 @@ class ReceiveFiles(QDialog):
         self.ui.setupUi(self)
         self.show()
 
+        self.windows = list()
         self.ui.receiveButton.clicked.connect(self.receive_files)
 
     def receive_files(self):
