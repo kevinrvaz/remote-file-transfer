@@ -20,16 +20,15 @@ class Receiver(Client):
         return file_name
 
     def fetch_data(self, ui_element):
-
         IP = ui_element.ui.lineEditIP.text()
 
         client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         client.connect((IP, self.get_port()))
 
         header = client.recv(200)
-        size, file_name = header.split()
-        size = int(size)
-        file_name = file_name.decode("utf-8")
+        vals = header.split()
+        size = int(vals[0])
+        file_name = " ".join([vals[i].decode("utf-8") for i in range(1, len(vals))])
         save_location = os.path.join(self.save_file_location, file_name)
 
         transferred_file_bytes = []
