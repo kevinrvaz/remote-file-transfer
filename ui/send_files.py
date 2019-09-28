@@ -64,6 +64,9 @@ class Ui_Dialog(object):
 "}")
         self.lineEditFileLocation.setObjectName("lineEditFileLocation")
         self.horizontalLayout_2.addWidget(self.lineEditFileLocation)
+        self.toolButton = QtWidgets.QToolButton(self.verticalLayoutWidget)
+        self.toolButton.setObjectName("toolButton")
+        self.horizontalLayout_2.addWidget(self.toolButton)
         self.verticalLayout.addLayout(self.horizontalLayout_2)
         self.sendButton = QtWidgets.QPushButton(self.verticalLayoutWidget)
         self.sendButton.setStyleSheet("#sendButton {\n"
@@ -118,6 +121,7 @@ class Ui_Dialog(object):
         self.ipLabel.setText(_translate("Dialog", "e.g. 127.0.0.1"))
         self.labelFileLocation.setText(_translate("Dialog", "Enter File Location"))
         self.lineEditFileLocation.setToolTip(_translate("Dialog", "Enter the absolute path of the file to be transfered, incase of multiple files share the location of the compressed file."))
+        self.toolButton.setText(_translate("Dialog", "..."))
         self.sendButton.setToolTip(_translate("Dialog", "Begin transmission of files to the receiver"))
         self.sendButton.setText(_translate("Dialog", "Send"))
         self.labelProgress.setText(_translate("Dialog", "Transfer Progress"))

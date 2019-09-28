@@ -1,4 +1,3 @@
-from PyQt5.QtWidgets import QMessageBox
 from interfaces.client import Client
 
 import socket
@@ -8,6 +7,13 @@ import os
 class Receiver(Client):
     def __init__(self, ip, save_file_path):
         super().__init__(ip, save_file_path)
+        self.__received = False
+
+    def set_received(self, val):
+        self.__received = val
+
+    def get_received(self):
+        return self.__received
 
     def get_file_name(self):
         _, file_name = os.path.split(self.save_file_location)
@@ -37,11 +43,8 @@ class Receiver(Client):
             transferred_file_bytes.append(server_data)
 
         self.write_data(transferred_file_bytes, save_location)
-        message = QMessageBox()
-        ui_element.windows.append(message)
-        message.setText("Download complete")
-        message.show()
-        ui_element.windows.pop()
+        if not len(transferred_file_bytes) <= 0:
+            self.set_received(True)
 
     def write_data(self, data, save_location):
         with open(save_location, "wb") as file:

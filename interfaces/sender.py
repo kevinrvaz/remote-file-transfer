@@ -1,4 +1,3 @@
-from PyQt5.QtWidgets import QMessageBox
 from interfaces.server import Server
 
 import socket
@@ -8,6 +7,13 @@ import os
 class Sender(Server):
     def __init__(self, ip, file_location):
         super().__init__(ip, file_location)
+        self.__sent = False
+
+    def set_sent(self, val):
+        self.__sent = val
+
+    def get_sent(self):
+        return self.__sent
 
     def get_file_name(self):
         _, tail = os.path.split(self.file_location)
@@ -47,9 +53,5 @@ class Sender(Server):
             sent_data += len(data)
             ui_element.ui.progressBar.setValue((sent_data/file_size) * 100)
         client.close()
-
-        message = QMessageBox()
-        ui_element.windows.append(message)
-        message.setText("Transfer completed")
-        message.show()
-        ui_element.windows.pop()
+        if sent_data != 0:
+            self.set_sent(True)

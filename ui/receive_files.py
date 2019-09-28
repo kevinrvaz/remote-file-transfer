@@ -64,6 +64,9 @@ class Ui_Dialog(object):
 "}")
         self.lineEditSavePath.setObjectName("lineEditSavePath")
         self.horizontalLayout_2.addWidget(self.lineEditSavePath)
+        self.toolButton = QtWidgets.QToolButton(self.verticalLayoutWidget)
+        self.toolButton.setObjectName("toolButton")
+        self.horizontalLayout_2.addWidget(self.toolButton)
         self.verticalLayout.addLayout(self.horizontalLayout_2)
         self.receiveButton = QtWidgets.QPushButton(self.verticalLayoutWidget)
         self.receiveButton.setStyleSheet("#receiveButton {\n"
@@ -105,5 +108,6 @@ class Ui_Dialog(object):
         self.label.setText(_translate("Dialog", "Remote File Sharing"))
         self.label_2.setText(_translate("Dialog", "Sender IPv4 address"))
         self.label_3.setText(_translate("Dialog", "Save Path (absolute)"))
+        self.toolButton.setText(_translate("Dialog", "..."))
         self.receiveButton.setText(_translate("Dialog", "Receive Files"))
         self.label_4.setText(_translate("Dialog", "Download in progress"))
