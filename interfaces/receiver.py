@@ -6,6 +6,7 @@ from shutil import rmtree
 import socket
 import math
 import os
+import gc
 
 TEMP_LOCATION = ".asdkjasdkasdhlsadhsajdhlas"
 
@@ -15,23 +16,21 @@ def receive_data_thread(port, ip, location):
     client.connect((ip, port))
     file_name = client.recv(10).decode("utf-8").strip()
 
-    received_bytes = b""
+    received_bytes = []
 
     while True:
         temp = client.recv(1024)
         if temp:
-            received_bytes += temp
+            received_bytes.append(temp)
         else:
             break
 
-    data = received_bytes
+    data = b"".join(received_bytes)
 
     if data:
         with open(os.path.join(os.path.sep.join(location.split(os.path.sep)[:-1]),
                                TEMP_LOCATION, file_name), "wb") as file:
             file.write(data)
-
-    print(f"Received data filename {file_name} of size {len(data)}")
 
     return len(data)
 
@@ -49,7 +48,7 @@ def receive_data_process(ports, ip, location):
             with thread_lock:
                 completed_bytes.data += res
 
-    with ThreadPoolExecutor(max_workers=5) as thread_pool:
+    with ThreadPoolExecutor(max_workers=10) as thread_pool:
         for port in ports:
             threads.append(thread_pool.submit(receive_data_thread, port, ip, location))
             threads[-1].add_done_callback(update_hook)
@@ -94,7 +93,7 @@ class Receiver(Client):
         save_location = os.path.join(self.save_file_location, file_name)
 
         futures = []
-        ports = list(range(30000, 30050))
+        ports = list(range(30000, 30100))
 
         os.makedirs(os.path.join(os.path.sep.join(save_location.split(os.path.sep)[:-1]),
                                  TEMP_LOCATION), exist_ok=True)
@@ -109,13 +108,17 @@ class Receiver(Client):
                     r.data += res
                     ui_element.ui.progressBar.setValue((r.data / size) * 100)
 
+            gc.collect()
+
         with ProcessPoolExecutor(max_workers=5) as executor:
-            for i in range(int(math.ceil(size / 20480))):
-                futures.append(executor.submit(receive_data_process, ports[(i % 5) * 5:(i % 5) * 5 + 5],
+            for i in range(int(math.ceil(size / 40960))):
+                futures.append(executor.submit(receive_data_process, ports[(i % 10) * 10:(i % 10) * 10 + 10],
                                                IP, save_location))
                 futures[-1].add_done_callback(update_hook)
 
         wait(futures)
+
+        gc.collect()
 
         self.write_data(save_location)
         self.set_received(True)

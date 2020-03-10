@@ -4,6 +4,7 @@ from multiprocessing import Manager
 from threading import Lock
 import socket
 import os
+import gc
 
 
 def create_server(i, ip):
@@ -24,9 +25,9 @@ def construct_header(size, file_name):
 
 def send_data_thread(file_name, server, data):
     client, address = server.accept()
-    print(f"connection from {address} sending {len(data)} bytes")
     client.send(bytes(f"{file_name:<{10}}", "utf-8"))
     client.send(data)
+
     return len(data)
 
 
@@ -43,13 +44,13 @@ def send_data_process(data, file_name, servers):
             with thread_lock:
                 completed_bytes.data += res
 
-    with ThreadPoolExecutor(max_workers=5) as thread_pool:
+    with ThreadPoolExecutor(max_workers=10) as thread_pool:
         start = 0
         for index in range(file_name, file_name + 10):
             end = start + 4096
             if end > len(data):
                 end = len(data)
-            threads.append(thread_pool.submit(send_data_thread, index, servers[index % 5], data[start:end]))
+            threads.append(thread_pool.submit(send_data_thread, index, servers[index % 10], data[start:end]))
             threads[-1].add_done_callback(update_hook)
             start = end
             if end >= len(data):
@@ -88,7 +89,7 @@ class Sender(Server):
     def read_data(self):
         with open(self.file_location, "rb") as file:
             while True:
-                data = file.read(20480)
+                data = file.read(40960)
                 if not data or len(data) <= 0:
                     break
                 yield data
@@ -115,7 +116,7 @@ class Sender(Server):
         s = SentData()
         process_lock = Manager().Lock()
 
-        servers = [create_server(i, self.ip) for i in range(50)]
+        servers = [create_server(i, self.ip) for i in range(100)]
 
         def update_hook(future):
             res = future.result()
@@ -123,15 +124,18 @@ class Sender(Server):
                 with process_lock:
                     s.data += res
                     ui_element.ui.progressBar.setValue((s.data / file_size) * 100)
+            gc.collect()
 
         with ProcessPoolExecutor(max_workers=5) as executor:
             for file_name, data in enumerate(self.read_data()):
                 i = file_name
                 futures.append(executor.submit(send_data_process, data,
-                                               file_name * 5, servers[(i % 5) * 5:(i % 5) * 5 + 5]))
+                                               file_name * 10, servers[(i % 10) * 10:(i % 10) * 10 + 10]))
                 futures[-1].add_done_callback(update_hook)
 
         wait(futures)
+
+        gc.collect()
 
         if s.data != 0:
             self.set_sent(True)
