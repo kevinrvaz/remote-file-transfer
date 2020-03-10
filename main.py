@@ -1,15 +1,51 @@
 from PyQt5.QtWidgets import QApplication, QDialog, QFileDialog, QMessageBox
 from interfaces.receiver import Receiver
 from interfaces.sender import Sender
+from quamash import QEventLoop
 
 import ui.receive_files
 import ui.send_files
 import ui.startup
 
 import netifaces as ni
-import threading
 import platform
+import asyncio
 import sys
+
+
+async def send_files(sender, self):
+    sender.send_data(self)
+
+    if sender.get_sent():
+        message = QMessageBox()
+        message.information(self, "Information", "Transfer complete")
+        message.show()
+
+    sender.set_sent(False)
+    self.ui.sendButton.setEnabled(True)
+    self.ui.labelProgress.setVisible(False)
+    self.ui.progressBar.setVisible(False)
+
+    def stopper(lp):
+        lp.stop()
+
+
+async def receive_files(receiver, self):
+    receiver.fetch_data(self)
+
+    if receiver.get_received():
+        message = QMessageBox()
+        message.information(self, "Information", "Download complete")
+        message.show()
+
+    receiver.set_received(False)
+
+    self.ui.receiveButton.setEnabled(True)
+    self.ui.label_4.setVisible(False)
+    self.ui.progressBar.setVisible(False)
+
+    def stopper(lp):
+        lp.stop()
 
 
 class StartUp(QDialog):
@@ -42,11 +78,12 @@ class SendFiles(QDialog):
         self.ui.setupUi(self)
         self.ui.labelProgress.setVisible(False)
         self.ui.progressBar.setVisible(False)
-        self.show()
 
         self.ui.genIP.clicked.connect(self.generate_server_ip)
         self.ui.sendButton.clicked.connect(self.send_files)
         self.ui.toolButton.clicked.connect(self.open_file_dialog)
+
+        self.show()
 
     def open_file_dialog(self):
         if platform.system() == "Windows":
@@ -79,18 +116,7 @@ class SendFiles(QDialog):
         ip = self.get_ip()
 
         sender = Sender(ip, file_location)
-        sender_thread = threading.Thread(target=sender.send_data, args=(self,))
-        sender_thread.start()
-        sender_thread.join()
-
-        if sender.get_sent():
-            message = QMessageBox()
-            message.information(self, "Information", "Transfer complete")
-            message.show()
-        sender.set_sent(False)
-        self.ui.sendButton.setEnabled(True)
-        self.ui.labelProgress.setVisible(False)
-        self.ui.progressBar.setVisible(False)
+        asyncio.ensure_future(send_files(sender, self))
 
 
 class ReceiveFiles(QDialog):
@@ -100,10 +126,11 @@ class ReceiveFiles(QDialog):
         self.ui.setupUi(self)
         self.ui.label_4.setVisible(False)
         self.ui.progressBar.setVisible(False)
-        self.show()
 
         self.ui.receiveButton.clicked.connect(self.receive_files)
         self.ui.toolButton.clicked.connect(self.open_file_dialog)
+
+        self.show()
 
     def open_file_dialog(self):
         if platform.system() == "Windows":
@@ -120,22 +147,16 @@ class ReceiveFiles(QDialog):
         save_location = self.ui.lineEditSavePath.text()
 
         receiver = Receiver(ip, save_location)
-        receiver_thread = threading.Thread(target=receiver.fetch_data, args=(self,))
-        receiver_thread.start()
-        receiver_thread.join()
-
-        if receiver.get_received():
-            message = QMessageBox()
-            message.information(self, "Information", "Download complete")
-            message.show()
-        receiver.set_received(False)
-        self.ui.receiveButton.setEnabled(True)
-        self.ui.label_4.setVisible(False)
-        self.ui.progressBar.setVisible(False)
+        asyncio.ensure_future(receive_files(receiver, self))
 
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
+    loop = QEventLoop(app)
+    asyncio.set_event_loop(loop)
     start_up_ui = StartUp()
-    start_up_ui.show()
+    start_up_ui.exec()
+    with loop:
+        loop.run_forever()
+        loop.close()
     sys.exit(app.exec_())
