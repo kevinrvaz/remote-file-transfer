@@ -54,7 +54,7 @@ def receive_data_process(ports, ip, location):
             threads[-1].add_done_callback(update_hook)
 
     wait(threads)
-
+    del threads
     return completed_bytes.data
 
 
@@ -107,8 +107,6 @@ class Receiver(Client):
                 with process_lock:
                     r.data += res
                     ui_element.ui.progressBar.setValue((r.data / size) * 100)
-
-            gc.collect()
 
         with ProcessPoolExecutor(max_workers=5) as executor:
             for i in range(int(math.ceil(size / 40960))):

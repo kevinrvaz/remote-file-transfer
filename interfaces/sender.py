@@ -57,7 +57,7 @@ def send_data_process(data, file_name, servers):
                 break
 
     wait(threads)
-
+    del threads
     return completed_bytes.data
 
 
@@ -124,7 +124,6 @@ class Sender(Server):
                 with process_lock:
                     s.data += res
                     ui_element.ui.progressBar.setValue((s.data / file_size) * 100)
-            gc.collect()
 
         with ProcessPoolExecutor(max_workers=5) as executor:
             for file_name, data in enumerate(self.read_data()):
