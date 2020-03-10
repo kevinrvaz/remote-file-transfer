@@ -1,6 +1,7 @@
-from concurrent.futures import ProcessPoolExecutor, wait
+from concurrent.futures import ProcessPoolExecutor, wait, ThreadPoolExecutor
 from interfaces.client import Client
 from multiprocessing import Manager
+from threading import Lock
 from shutil import rmtree
 import socket
 import math
@@ -9,23 +10,53 @@ import os
 TEMP_LOCATION = ".asdkjasdkasdhlsadhsajdhlas"
 
 
-def server_ports():
-    return list(range(30000, 30010))
-
-
-def receive_data_thread(server, ip, location):
+def receive_data_thread(port, ip, location):
     client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    client.connect((ip, server))
+    client.connect((ip, port))
     file_name = client.recv(10).decode("utf-8").strip()
 
-    data = client.recv(4096)
+    received_bytes = b""
+
+    while True:
+        temp = client.recv(1024)
+        if temp:
+            received_bytes += temp
+        else:
+            break
+
+    data = received_bytes
+
     if data:
         with open(os.path.join(os.path.sep.join(location.split(os.path.sep)[:-1]),
                                TEMP_LOCATION, file_name), "wb") as file:
             file.write(data)
 
     print(f"Received data filename {file_name} of size {len(data)}")
+
     return len(data)
+
+
+def receive_data_process(ports, ip, location):
+    threads = []
+
+    completed_bytes = ReceivedData()
+
+    thread_lock = Lock()
+
+    def update_hook(future):
+        res = future.result()
+        if res:
+            with thread_lock:
+                completed_bytes.data += res
+
+    with ThreadPoolExecutor(max_workers=5) as thread_pool:
+        for port in ports:
+            threads.append(thread_pool.submit(receive_data_thread, port, ip, location))
+            threads[-1].add_done_callback(update_hook)
+
+    wait(threads)
+
+    return completed_bytes.data
 
 
 class ReceivedData:
@@ -63,23 +94,25 @@ class Receiver(Client):
         save_location = os.path.join(self.save_file_location, file_name)
 
         futures = []
-        ports = server_ports()
+        ports = list(range(30000, 30050))
+
         os.makedirs(os.path.join(os.path.sep.join(save_location.split(os.path.sep)[:-1]),
                                  TEMP_LOCATION), exist_ok=True)
 
         r = ReceivedData()
-        lock = Manager().Lock()
+        process_lock = Manager().Lock()
 
         def update_hook(future):
             res = future.result()
             if res:
-                with lock:
+                with process_lock:
                     r.data += res
                     ui_element.ui.progressBar.setValue((r.data / size) * 100)
 
-        with ProcessPoolExecutor(max_workers=10) as executor:
-            for i in range(int(math.ceil(size / 4096))):
-                futures.append(executor.submit(receive_data_thread, ports[i % 10], IP, save_location))
+        with ProcessPoolExecutor(max_workers=5) as executor:
+            for i in range(int(math.ceil(size / 20480))):
+                futures.append(executor.submit(receive_data_process, ports[(i % 5) * 5:(i % 5) * 5 + 5],
+                                               IP, save_location))
                 futures[-1].add_done_callback(update_hook)
 
         wait(futures)

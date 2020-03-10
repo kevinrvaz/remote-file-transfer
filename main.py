@@ -2,6 +2,7 @@ from PyQt5.QtWidgets import QApplication, QDialog, QFileDialog, QMessageBox
 from interfaces.receiver import Receiver
 from interfaces.sender import Sender
 from quamash import QEventLoop
+from time import time
 
 import ui.receive_files
 import ui.send_files
@@ -14,11 +15,13 @@ import sys
 
 
 async def send_files(sender, self):
+    start_time = time()
     sender.send_data(self)
+    end_time = time() - start_time
 
     if sender.get_sent():
         message = QMessageBox()
-        message.information(self, "Information", "Transfer complete")
+        message.information(self, "Information", f"Transfer complete, time taken {round(end_time / 60, 2)} minutes")
         message.show()
 
     sender.set_sent(False)
@@ -31,11 +34,13 @@ async def send_files(sender, self):
 
 
 async def receive_files(receiver, self):
+    start_time = time()
     receiver.fetch_data(self)
+    end_time = time() - start_time
 
     if receiver.get_received():
         message = QMessageBox()
-        message.information(self, "Information", "Download complete")
+        message.information(self, "Information", f"Download complete, time taken {round(end_time / 60, 2)} minutes")
         message.show()
 
     receiver.set_received(False)
@@ -152,11 +157,15 @@ class ReceiveFiles(QDialog):
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
+
     loop = QEventLoop(app)
     asyncio.set_event_loop(loop)
+
     start_up_ui = StartUp()
     start_up_ui.exec()
+
     with loop:
         loop.run_forever()
         loop.close()
+
     sys.exit(app.exec_())
