@@ -1,7 +1,10 @@
 from PyQt5.QtWidgets import QApplication, QDialog, QFileDialog, QMessageBox
+from quamash import QEventLoop
+
 from interfaces.receiver import Receiver
 from interfaces.sender import Sender
-from quamash import QEventLoop
+
+from shutil import rmtree
 from time import time
 
 import ui.receive_files
@@ -14,69 +17,29 @@ import asyncio
 import sys
 
 
-async def send_files(sender, self):
-    start_time = time()
-    sender.send_data(self)
-    end_time = time() - start_time
-
-    if sender.get_sent():
-        message = QMessageBox()
-        message.information(self, "Information", f"Transfer complete, time taken {round(end_time / 60, 2)} minutes")
-        message.show()
-
-    sender.set_sent(False)
-    self.ui.sendButton.setEnabled(True)
-    self.ui.labelProgress.setVisible(False)
-    self.ui.progressBar.setVisible(False)
-
-    def stopper(lp):
-        lp.stop()
-
-
-async def receive_files(receiver, self):
-    start_time = time()
-    receiver.fetch_data(self)
-    end_time = time() - start_time
-
-    if receiver.get_received():
-        message = QMessageBox()
-        message.information(self, "Information", f"Download complete, time taken {round(end_time / 60, 2)} minutes")
-        message.show()
-
-    receiver.set_received(False)
-
-    self.ui.receiveButton.setEnabled(True)
-    self.ui.label_4.setVisible(False)
-    self.ui.progressBar.setVisible(False)
-
-    def stopper(lp):
-        lp.stop()
-
-
 class StartUp(QDialog):
     def __init__(self):
         super().__init__()
         self.ui = ui.startup.Ui_Dialog()
         self.ui.setupUi(self)
-        self.show()
         self.windows = list()
         self.ui.sendFiles.clicked.connect(self.open_send_files_ui)
         self.ui.receiveFiles.clicked.connect(self.open_receive_files_ui)
 
     def open_send_files_ui(self):
         self.setVisible(False)
-        send_files_ui = SendFiles()
+        send_files_ui = SendFilesUI()
         self.windows.append(send_files_ui)
-        send_files_ui.show()
+        send_files_ui.exec()
 
     def open_receive_files_ui(self):
         self.setVisible(False)
-        receive_files_ui = ReceiveFiles()
+        receive_files_ui = ReceiveFilesUI()
         self.windows.append(receive_files_ui)
-        receive_files_ui.show()
+        receive_files_ui.exec()
 
 
-class SendFiles(QDialog):
+class SendFilesUI(QDialog):
     def __init__(self):
         super().__init__()
         self.ui = ui.send_files.Ui_Dialog()
@@ -87,8 +50,6 @@ class SendFiles(QDialog):
         self.ui.genIP.clicked.connect(self.generate_server_ip)
         self.ui.sendButton.clicked.connect(self.send_files)
         self.ui.toolButton.clicked.connect(self.open_file_dialog)
-
-        self.show()
 
     def open_file_dialog(self):
         if platform.system() == "Windows":
@@ -121,10 +82,28 @@ class SendFiles(QDialog):
         ip = self.get_ip()
 
         sender = Sender(ip, file_location)
-        asyncio.ensure_future(send_files(sender, self))
+        asyncio.ensure_future(self.send_file(sender))
+
+    async def send_file(self, sender):
+        start_time = time()
+        sender.send_data(self)
+        end_time = time() - start_time
+
+        if sender.get_sent():
+            message = QMessageBox()
+            message.information(self, "Information", f"Transfer complete, time taken {round(end_time / 60, 2)} minutes")
+            message.show()
+
+        sender.set_sent(False)
+        self.ui.sendButton.setEnabled(True)
+        self.ui.labelProgress.setVisible(False)
+        self.ui.progressBar.setVisible(False)
+
+        def stopper(lp):
+            lp.stop()
 
 
-class ReceiveFiles(QDialog):
+class ReceiveFilesUI(QDialog):
     def __init__(self):
         super().__init__()
         self.ui = ui.receive_files.Ui_Dialog()
@@ -134,8 +113,6 @@ class ReceiveFiles(QDialog):
 
         self.ui.receiveButton.clicked.connect(self.receive_files)
         self.ui.toolButton.clicked.connect(self.open_file_dialog)
-
-        self.show()
 
     def open_file_dialog(self):
         if platform.system() == "Windows":
@@ -152,20 +129,45 @@ class ReceiveFiles(QDialog):
         save_location = self.ui.lineEditSavePath.text()
 
         receiver = Receiver(ip, save_location)
-        asyncio.ensure_future(receive_files(receiver, self))
+        asyncio.ensure_future(self.receive_file(receiver))
+
+    async def receive_file(self, receiver):
+        start_time = time()
+        receiver.fetch_data(self)
+        end_time = time() - start_time
+
+        if receiver.get_received():
+            message = QMessageBox()
+            message.information(self, "Information", f"Download complete, time taken {round(end_time / 60, 2)} minutes")
+            message.show()
+
+        self.ui.label_4.setText("Writing File")
+        self.ui.progressBar.setValue(0)
+        path = await receiver.write_data(receiver.save_location, self)
+        rmtree(path)
+
+        receiver.set_received(False)
+
+        self.ui.receiveButton.setEnabled(True)
+        self.ui.label_4.setVisible(False)
+        self.ui.progressBar.setVisible(False)
+
+        def stopper(lp):
+            lp.stop()
+
+
+async def start_ui(application):
+    return application.exec()
 
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
 
-    loop = QEventLoop(app)
+    loop = QEventLoop(app=app)
     asyncio.set_event_loop(loop)
 
     start_up_ui = StartUp()
-    start_up_ui.exec()
+    start_up_ui.show()
 
-    with loop:
-        loop.run_forever()
-        loop.close()
+    sys.exit(loop.run_forever())
 
-    sys.exit(app.exec_())

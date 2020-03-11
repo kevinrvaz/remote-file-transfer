@@ -2,24 +2,32 @@ from concurrent.futures import ProcessPoolExecutor, wait, ThreadPoolExecutor
 from interfaces.client import Client
 from multiprocessing import Manager
 from threading import Lock
-from shutil import rmtree
+import aiofiles
 import socket
 import math
 import os
 import gc
 
 TEMP_LOCATION = ".asdkjasdkasdhlsadhsajdhlas"
+PROCESS_WORKERS = 5
+THREAD_WORKERS = 10
+BUFFER_SIZE = 32000
+USED_PORTS = 100
 
 
 def receive_data_thread(port, ip, location):
     client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     client.connect((ip, port))
-    file_name = client.recv(10).decode("utf-8").strip()
+
+    try:
+        file_name = client.recv(10).decode("utf-8").strip()
+    except ConnectionResetError:
+        return
 
     received_bytes = []
 
     while True:
-        temp = client.recv(4096)
+        temp = client.recv(8196)
         if temp:
             received_bytes.append(temp)
         else:
@@ -48,7 +56,7 @@ def receive_data_process(ports, ip, location):
             with thread_lock:
                 completed_bytes.data += res
 
-    with ThreadPoolExecutor(max_workers=10) as thread_pool:
+    with ThreadPoolExecutor(max_workers=THREAD_WORKERS) as thread_pool:
         for port in ports:
             threads.append(thread_pool.submit(receive_data_thread, port, ip, location))
             threads[-1].add_done_callback(update_hook)
@@ -66,11 +74,10 @@ class ReceivedData:
 
 
 class Receiver(Client):
-    received_data = 0
-
     def __init__(self, ip, save_file_path):
         super().__init__(ip, save_file_path)
         self.__received = False
+        self.save_location = ""
 
     def set_received(self, val):
         self.__received = val
@@ -95,7 +102,7 @@ class Receiver(Client):
         save_location = os.path.join(self.save_file_location, file_name)
 
         futures = []
-        ports = list(range(30000, 30100))
+        ports = list(range(30000, 30000 + USED_PORTS))
 
         os.makedirs(os.path.join(os.path.sep.join(save_location.split(os.path.sep)[:-1]),
                                  TEMP_LOCATION), exist_ok=True)
@@ -110,10 +117,11 @@ class Receiver(Client):
                     r.data += res
                     ui_element.ui.progressBar.setValue((r.data / size) * 100)
 
-        with ProcessPoolExecutor(max_workers=5) as executor:
-            for i in range(int(math.ceil(size / 320000))):
-                futures.append(executor.submit(receive_data_process, ports[(i % 10) * 10:(i % 10) * 10 + 10],
-                                               IP, save_location))
+        with ProcessPoolExecutor(max_workers=PROCESS_WORKERS) as executor:
+            for i in range(int(math.ceil(size / (BUFFER_SIZE * THREAD_WORKERS)))):
+                futures.append(executor.submit(receive_data_process,
+                                               ports[(i % THREAD_WORKERS) * THREAD_WORKERS:(i % THREAD_WORKERS)
+                                                     * THREAD_WORKERS + THREAD_WORKERS], IP, save_location))
                 futures[-1].add_done_callback(update_hook)
 
         wait(futures)
@@ -123,19 +131,19 @@ class Receiver(Client):
         del futures
         gc.collect()
 
-        self.write_data(save_location)
+        self.save_location = save_location
         self.set_received(True)
 
-    def write_data(self, save_location):
-        with open(save_location, "wb") as file:
+    async def write_data(self, save_location, ui_element):
+        async with aiofiles.open(save_location, mode="wb") as file:
             path = os.path.join(os.path.sep.join(save_location.split(os.path.sep)[:-1]),
                                 TEMP_LOCATION)
 
             files = [i for i in os.listdir(path) if i.isnumeric()]
+            for index, temp_file in enumerate(sorted(files, key=int)):
+                async with aiofiles.open(os.path.join(path, temp_file), mode="rb") as temp:
+                    contents = await temp.read()
+                    ui_element.ui.progressBar.setValue(((index + 1) / len(files)) * 100)
+                    await file.write(contents)
 
-            for temp_file in sorted(files, key=int):
-                with open(os.path.join(path, temp_file), "rb") as temp:
-                    print(f"writing {temp_file}")
-                    file.write(temp.read())
-
-        rmtree(path)
+        return path

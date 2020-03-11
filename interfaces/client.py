@@ -15,7 +15,7 @@ class Client(abc.ABC):
         pass
 
     @abc.abstractmethod
-    def write_data(self, save_location):
+    def write_data(self, save_location, ui_element):
         pass
 
     @abc.abstractmethod

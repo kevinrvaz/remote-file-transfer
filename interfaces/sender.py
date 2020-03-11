@@ -7,6 +7,12 @@ import os
 import gc
 
 
+PROCESS_WORKERS = 5
+THREAD_WORKERS = 10
+BUFFER_SIZE = 32000
+USED_PORTS = 100
+
+
 def create_server(i, ip):
     temp_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     temp_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -44,13 +50,14 @@ def send_data_process(data, file_name, servers):
             with thread_lock:
                 completed_bytes.data += res
 
-    with ThreadPoolExecutor(max_workers=10) as thread_pool:
+    with ThreadPoolExecutor(max_workers=THREAD_WORKERS) as thread_pool:
         start = 0
-        for index in range(file_name, file_name + 10):
-            end = start + 32000
+        for index in range(file_name, file_name + THREAD_WORKERS):
+            end = start + BUFFER_SIZE
             if end > len(data):
                 end = len(data)
-            threads.append(thread_pool.submit(send_data_thread, index, servers[index % 10], data[start:end]))
+            threads.append(thread_pool.submit(send_data_thread, index, servers[index % THREAD_WORKERS],
+                                              data[start:end]))
             threads[-1].add_done_callback(update_hook)
             start = end
             if end >= len(data):
@@ -91,7 +98,7 @@ class Sender(Server):
     def read_data(self):
         with open(self.file_location, "rb") as file:
             while True:
-                data = file.read(320000)
+                data = file.read(THREAD_WORKERS * BUFFER_SIZE)
                 if not data or len(data) <= 0:
                     break
                 yield data
@@ -118,7 +125,7 @@ class Sender(Server):
         s = SentData()
         process_lock = Manager().Lock()
 
-        servers = [create_server(i, self.ip) for i in range(100)]
+        servers = [create_server(i, self.ip) for i in range(USED_PORTS)]
 
         def update_hook(future):
             res = future.result()
@@ -127,11 +134,13 @@ class Sender(Server):
                     s.data += res
                     ui_element.ui.progressBar.setValue((s.data / file_size) * 100)
 
-        with ProcessPoolExecutor(max_workers=5) as executor:
+        with ProcessPoolExecutor(max_workers=PROCESS_WORKERS) as executor:
             for file_name, data in enumerate(self.read_data()):
                 i = file_name
                 futures.append(executor.submit(send_data_process, data,
-                                               file_name * 10, servers[(i % 10) * 10:(i % 10) * 10 + 10]))
+                                               file_name * THREAD_WORKERS,
+                                               servers[(i % THREAD_WORKERS) * THREAD_WORKERS:(i % THREAD_WORKERS)
+                                                       * THREAD_WORKERS + THREAD_WORKERS]))
                 futures[-1].add_done_callback(update_hook)
 
         wait(futures)
