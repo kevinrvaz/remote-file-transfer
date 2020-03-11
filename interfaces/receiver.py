@@ -11,7 +11,7 @@ import gc
 
 TEMP_LOCATION = ".asdkjasdkasdhlsadhsajdhlas"
 PROCESS_WORKERS = 5
-THREAD_WORKERS = 10
+THREAD_WORKERS = 20
 BUFFER_SIZE = 32768
 USED_PORTS = 100
 
@@ -33,7 +33,7 @@ def receive_data_thread(port, ip, location, loop):
     received_bytes = []
 
     while True:
-        temp = client.recv(8192)
+        temp = client.recv(1024)
         if temp:
             received_bytes.append(temp)
         else:
@@ -139,11 +139,14 @@ class Receiver(Client):
                     ui_element.ui.progressBar.setValue((r.data / size) * 100)
 
         with ProcessPoolExecutor(max_workers=PROCESS_WORKERS) as executor:
+            start = 0
             for i in range(int(math.ceil(size / (BUFFER_SIZE * THREAD_WORKERS)))):
-                futures.append(executor.submit(receive_data_process,
-                                               ports[(i % THREAD_WORKERS) * THREAD_WORKERS:(i % THREAD_WORKERS)
-                                                     * THREAD_WORKERS + THREAD_WORKERS], IP, save_location))
+                end = start + THREAD_WORKERS
+                futures.append(executor.submit(receive_data_process, ports[start:end], IP, save_location))
                 futures[-1].add_done_callback(update_hook)
+                start = end
+                if end == USED_PORTS:
+                    start = 0
 
         wait(futures)
         del executor

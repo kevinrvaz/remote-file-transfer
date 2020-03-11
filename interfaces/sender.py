@@ -8,7 +8,7 @@ import gc
 
 
 PROCESS_WORKERS = 5
-THREAD_WORKERS = 10
+THREAD_WORKERS = 20
 BUFFER_SIZE = 32768
 USED_PORTS = 100
 
@@ -135,13 +135,14 @@ class Sender(Server):
                     ui_element.ui.progressBar.setValue((s.data / file_size) * 100)
 
         with ProcessPoolExecutor(max_workers=PROCESS_WORKERS) as executor:
+            start = 0
             for file_name, data in enumerate(self.read_data()):
-                i = file_name
-                futures.append(executor.submit(send_data_process, data,
-                                               file_name * THREAD_WORKERS,
-                                               servers[(i % THREAD_WORKERS) * THREAD_WORKERS:(i % THREAD_WORKERS)
-                                                       * THREAD_WORKERS + THREAD_WORKERS]))
+                end = start + THREAD_WORKERS
+                futures.append(executor.submit(send_data_process, data, file_name * THREAD_WORKERS, servers[start:end]))
                 futures[-1].add_done_callback(update_hook)
+                start = end
+                if end == USED_PORTS:
+                    start = 0
 
         wait(futures)
         del executor
