@@ -72,7 +72,9 @@ class SendFilesUI(QDialog):
                         for key, ip_add in ip_interfaces.items():
                             if key == 'addr' and ip_add != '127.0.0.1':
                                 return ip_add
-        return ni.ifaddresses("wlp2s0")[ni.AF_INET][0]["addr"]
+
+        default_gateway = ni.gateways()["default"][2][1]
+        return ni.ifaddresses(default_gateway)[ni.AF_INET][0]["addr"]
 
     def send_files(self):
         self.ui.sendButton.setEnabled(False)

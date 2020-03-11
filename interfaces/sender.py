@@ -64,9 +64,11 @@ def send_data_process(data, file_name, servers):
                 break
 
     wait(threads)
+
     del thread_pool
     del thread_lock
     del threads
+
     return completed_bytes.data
 
 
@@ -145,10 +147,12 @@ class Sender(Server):
                     start = 0
 
         wait(futures)
+
         del executor
         del process_lock
         del servers
         del futures
+
         gc.collect()
 
         if s.data != 0:

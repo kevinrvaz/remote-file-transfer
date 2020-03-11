@@ -33,7 +33,7 @@ def receive_data_thread(port, ip, location, loop):
     received_bytes = []
 
     while True:
-        temp = client.recv(1024)
+        temp = client.recv(8192)
         if temp:
             received_bytes.append(temp)
         else:
