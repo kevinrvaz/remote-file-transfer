@@ -47,7 +47,7 @@ def send_data_process(data, file_name, servers):
     with ThreadPoolExecutor(max_workers=10) as thread_pool:
         start = 0
         for index in range(file_name, file_name + 10):
-            end = start + 4096
+            end = start + 32000
             if end > len(data):
                 end = len(data)
             threads.append(thread_pool.submit(send_data_thread, index, servers[index % 10], data[start:end]))
@@ -57,6 +57,8 @@ def send_data_process(data, file_name, servers):
                 break
 
     wait(threads)
+    del thread_pool
+    del thread_lock
     del threads
     return completed_bytes.data
 
@@ -89,7 +91,7 @@ class Sender(Server):
     def read_data(self):
         with open(self.file_location, "rb") as file:
             while True:
-                data = file.read(40960)
+                data = file.read(320000)
                 if not data or len(data) <= 0:
                     break
                 yield data
@@ -133,7 +135,10 @@ class Sender(Server):
                 futures[-1].add_done_callback(update_hook)
 
         wait(futures)
-
+        del executor
+        del process_lock
+        del servers
+        del futures
         gc.collect()
 
         if s.data != 0:

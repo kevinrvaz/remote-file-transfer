@@ -19,7 +19,7 @@ def receive_data_thread(port, ip, location):
     received_bytes = []
 
     while True:
-        temp = client.recv(1024)
+        temp = client.recv(4096)
         if temp:
             received_bytes.append(temp)
         else:
@@ -55,6 +55,8 @@ def receive_data_process(ports, ip, location):
 
     wait(threads)
     del threads
+    del thread_pool
+    del thread_lock
     return completed_bytes.data
 
 
@@ -109,13 +111,16 @@ class Receiver(Client):
                     ui_element.ui.progressBar.setValue((r.data / size) * 100)
 
         with ProcessPoolExecutor(max_workers=5) as executor:
-            for i in range(int(math.ceil(size / 40960))):
+            for i in range(int(math.ceil(size / 320000))):
                 futures.append(executor.submit(receive_data_process, ports[(i % 10) * 10:(i % 10) * 10 + 10],
                                                IP, save_location))
                 futures[-1].add_done_callback(update_hook)
 
         wait(futures)
-
+        del executor
+        del ports
+        del process_lock
+        del futures
         gc.collect()
 
         self.write_data(save_location)
