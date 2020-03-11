@@ -3,6 +3,7 @@ from interfaces.client import Client
 from multiprocessing import Manager
 from threading import Lock
 import aiofiles
+import asyncio
 import socket
 import math
 import os
@@ -11,11 +12,16 @@ import gc
 TEMP_LOCATION = ".asdkjasdkasdhlsadhsajdhlas"
 PROCESS_WORKERS = 5
 THREAD_WORKERS = 10
-BUFFER_SIZE = 32000
+BUFFER_SIZE = 32768
 USED_PORTS = 100
 
 
-def receive_data_thread(port, ip, location):
+async def write_file_thread(location, data):
+    async with aiofiles.open(location, mode="wb") as file:
+        await file.write(data)
+
+
+def receive_data_thread(port, ip, location, loop):
     client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     client.connect((ip, port))
 
@@ -27,7 +33,7 @@ def receive_data_thread(port, ip, location):
     received_bytes = []
 
     while True:
-        temp = client.recv(8196)
+        temp = client.recv(8192)
         if temp:
             received_bytes.append(temp)
         else:
@@ -35,36 +41,51 @@ def receive_data_thread(port, ip, location):
 
     data = b"".join(received_bytes)
 
-    if data:
-        with open(os.path.join(os.path.sep.join(location.split(os.path.sep)[:-1]),
-                               TEMP_LOCATION, file_name), "wb") as file:
-            file.write(data)
+    task = None
 
-    return len(data)
+    if data:
+        location = os.path.join(os.path.sep.join(location.split(os.path.sep)[:-1]),
+                                TEMP_LOCATION, file_name)
+        task = asyncio.ensure_future(write_file_thread(location, data), loop=loop)
+
+    return len(data), task
 
 
 def receive_data_process(ports, ip, location):
     threads = []
+    thread_lock = Lock()
 
     completed_bytes = ReceivedData()
 
-    thread_lock = Lock()
+    event_loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(event_loop)
+
+    file_tasks = []
 
     def update_hook(future):
         res = future.result()
         if res:
             with thread_lock:
-                completed_bytes.data += res
+                completed_bytes.data += res[0]
+                if res[1]:
+                    file_tasks.append(res[1])
 
     with ThreadPoolExecutor(max_workers=THREAD_WORKERS) as thread_pool:
         for port in ports:
-            threads.append(thread_pool.submit(receive_data_thread, port, ip, location))
+            threads.append(thread_pool.submit(receive_data_thread, port, ip, location, event_loop))
             threads[-1].add_done_callback(update_hook)
 
     wait(threads)
+
+    if file_tasks:
+        event_loop.run_until_complete(asyncio.wait(file_tasks))
+
+    del event_loop
+    del file_tasks
     del threads
     del thread_pool
     del thread_lock
+
     return completed_bytes.data
 
 

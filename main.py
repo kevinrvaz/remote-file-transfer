@@ -156,10 +156,6 @@ class ReceiveFilesUI(QDialog):
             lp.stop()
 
 
-async def start_ui(application):
-    return application.exec()
-
-
 if __name__ == "__main__":
     app = QApplication(sys.argv)
 
