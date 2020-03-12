@@ -1,4 +1,4 @@
-from concurrent.futures import ProcessPoolExecutor, wait, ThreadPoolExecutor
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 from interfaces.server import Server
 from multiprocessing import Manager
 from threading import Lock
@@ -58,8 +58,6 @@ def send_data_process(file_name, servers, start, fn):
 
             del data
 
-    wait(threads)
-
     del thread_pool
     del thread_lock
     del threads
@@ -93,7 +91,7 @@ class Sender(Server):
         return file_size
 
     def read_data(self, start):
-        with open(self.file_location, "rb") as file:
+        with open(self.file_location, mode="rb") as file:
             file.seek(start)
             sent_data = 0
             while True:
@@ -105,7 +103,7 @@ class Sender(Server):
                     break
                 yield data
 
-    async def send_data(self, ui_element):
+    def send_data(self, ui_element):
         server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         server.bind((self.ip, self.get_port()))
@@ -146,8 +144,6 @@ class Sender(Server):
                 start = end
                 if end == USED_PORTS:
                     start = 0
-
-        wait(futures)
 
         del executor
         del process_lock

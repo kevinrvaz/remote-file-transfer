@@ -1,4 +1,4 @@
-from concurrent.futures import ProcessPoolExecutor, wait, ThreadPoolExecutor
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 from interfaces.client import Client
 from multiprocessing import Manager
 from threading import Lock
@@ -75,8 +75,6 @@ def receive_data_process(ports, ip, location):
             threads.append(thread_pool.submit(receive_data_thread, port, ip, location, event_loop))
             threads[-1].add_done_callback(update_hook)
 
-    wait(threads)
-
     if file_tasks:
         event_loop.run_until_complete(asyncio.wait(file_tasks))
 
@@ -110,7 +108,7 @@ class Receiver(Client):
         _, file_name = os.path.split(self.save_file_location)
         return file_name
 
-    async def fetch_data(self, ui_element):
+    def fetch_data(self, ui_element):
         IP = ui_element.ui.lineEditIP.text()
 
         client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -148,7 +146,6 @@ class Receiver(Client):
                 if end == USED_PORTS:
                     start = 0
 
-        wait(futures)
         del executor
         del ports
         del process_lock

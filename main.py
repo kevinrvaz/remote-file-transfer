@@ -88,7 +88,8 @@ class SendFilesUI(QDialog):
 
     async def send_file(self, sender):
         start_time = time()
-        await sender.send_data(self)
+        thread_loop = asyncio.get_event_loop()
+        await thread_loop.run_in_executor(None, sender.send_data, self)
         end_time = time() - start_time
 
         if sender.get_sent():
@@ -135,7 +136,8 @@ class ReceiveFilesUI(QDialog):
 
     async def receive_file(self, receiver):
         start_time = time()
-        await receiver.fetch_data(self)
+        thread_loop = asyncio.get_event_loop()
+        await thread_loop.run_in_executor(None, receiver.fetch_data, self)
         end_time = time() - start_time
 
         if receiver.get_received():
