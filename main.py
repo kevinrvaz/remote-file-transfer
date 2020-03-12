@@ -88,15 +88,15 @@ class SendFilesUI(QDialog):
 
     async def send_file(self, sender):
         start_time = time()
-        sender.send_data(self)
+        await sender.send_data(self)
         end_time = time() - start_time
 
         if sender.get_sent():
             message = QMessageBox()
             message.information(self, "Information", f"Transfer complete, time taken {round(end_time / 60, 2)} minutes")
-            message.show()
 
         sender.set_sent(False)
+        self.ui.progressBar.setValue(0)
         self.ui.sendButton.setEnabled(True)
         self.ui.labelProgress.setVisible(False)
         self.ui.progressBar.setVisible(False)
@@ -135,16 +135,16 @@ class ReceiveFilesUI(QDialog):
 
     async def receive_file(self, receiver):
         start_time = time()
-        receiver.fetch_data(self)
+        await receiver.fetch_data(self)
         end_time = time() - start_time
 
         if receiver.get_received():
             message = QMessageBox()
             message.information(self, "Information", f"Download complete, time taken {round(end_time / 60, 2)} minutes")
-            message.show()
 
         self.ui.label_4.setText("Writing File")
         self.ui.progressBar.setValue(0)
+
         path = await receiver.write_data(receiver.save_location, self)
         rmtree(path)
 
@@ -153,6 +153,8 @@ class ReceiveFilesUI(QDialog):
         self.ui.receiveButton.setEnabled(True)
         self.ui.label_4.setVisible(False)
         self.ui.progressBar.setVisible(False)
+        self.ui.label_4.setText("Download in Progress")
+        self.ui.progressBar.setValue(0)
 
         def stopper(lp):
             lp.stop()

@@ -10,10 +10,10 @@ import os
 import gc
 
 TEMP_LOCATION = ".asdkjasdkasdhlsadhsajdhlas"
-PROCESS_WORKERS = 5
+PROCESS_WORKERS = 8
 THREAD_WORKERS = 20
 BUFFER_SIZE = 32768
-USED_PORTS = 100
+USED_PORTS = 160
 
 
 async def write_file_thread(location, data):
@@ -110,7 +110,7 @@ class Receiver(Client):
         _, file_name = os.path.split(self.save_file_location)
         return file_name
 
-    def fetch_data(self, ui_element):
+    async def fetch_data(self, ui_element):
         IP = ui_element.ui.lineEditIP.text()
 
         client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)

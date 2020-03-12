@@ -7,10 +7,10 @@ import os
 import gc
 
 
-PROCESS_WORKERS = 5
+PROCESS_WORKERS = 8
 THREAD_WORKERS = 20
 BUFFER_SIZE = 32768
-USED_PORTS = 100
+USED_PORTS = 160
 
 
 def create_server(i, ip):
@@ -37,7 +37,7 @@ def send_data_thread(file_name, server, data):
     return len(data)
 
 
-def send_data_process(data, file_name, servers):
+def send_data_process(file_name, servers, start, fn):
     threads = []
 
     completed_bytes = SentData()
@@ -51,17 +51,12 @@ def send_data_process(data, file_name, servers):
                 completed_bytes.data += res
 
     with ThreadPoolExecutor(max_workers=THREAD_WORKERS) as thread_pool:
-        start = 0
-        for index in range(file_name, file_name + THREAD_WORKERS):
-            end = start + BUFFER_SIZE
-            if end > len(data):
-                end = len(data)
+        for index, data in enumerate(fn(start), start=file_name):
             threads.append(thread_pool.submit(send_data_thread, index, servers[index % THREAD_WORKERS],
-                                              data[start:end]))
+                                              data))
             threads[-1].add_done_callback(update_hook)
-            start = end
-            if end >= len(data):
-                break
+
+            del data
 
     wait(threads)
 
@@ -97,15 +92,20 @@ class Sender(Server):
         file_size = os.path.getsize(self.file_location)
         return file_size
 
-    def read_data(self):
+    def read_data(self, start):
         with open(self.file_location, "rb") as file:
+            file.seek(start)
+            sent_data = 0
             while True:
-                data = file.read(THREAD_WORKERS * BUFFER_SIZE)
+                if sent_data >= (BUFFER_SIZE * THREAD_WORKERS):
+                    break
+                data = file.read(BUFFER_SIZE)
+                sent_data += len(data)
                 if not data or len(data) <= 0:
                     break
                 yield data
 
-    def send_data(self, ui_element):
+    async def send_data(self, ui_element):
         server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         server.bind((self.ip, self.get_port()))
@@ -138,9 +138,10 @@ class Sender(Server):
 
         with ProcessPoolExecutor(max_workers=PROCESS_WORKERS) as executor:
             start = 0
-            for file_name, data in enumerate(self.read_data()):
+            for file_name, chunk_start in enumerate(range(0, file_size, BUFFER_SIZE * THREAD_WORKERS)):
                 end = start + THREAD_WORKERS
-                futures.append(executor.submit(send_data_process, data, file_name * THREAD_WORKERS, servers[start:end]))
+                futures.append(executor.submit(send_data_process, file_name * THREAD_WORKERS,
+                                               servers[start:end], chunk_start, self.read_data))
                 futures[-1].add_done_callback(update_hook)
                 start = end
                 if end == USED_PORTS:
