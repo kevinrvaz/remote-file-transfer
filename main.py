@@ -1,20 +1,42 @@
 from PyQt5.QtWidgets import QApplication, QDialog, QFileDialog, QMessageBox
+from PyQt5.QtCore import QThread, pyqtSignal, pyqtSlot
 from quamash import QEventLoop
+
+from aioprocessing import AioProcess, AioPipe
+import netifaces as ni
 
 from interfaces.receiver import Receiver
 from interfaces.sender import Sender
-
-from shutil import rmtree
-from time import time
 
 import ui.receive_files
 import ui.send_files
 import ui.startup
 
-import netifaces as ni
+from shutil import rmtree
+from time import time
+
 import platform
 import asyncio
 import sys
+
+
+class ProgressThread(QThread):
+    progress_val = pyqtSignal(float)
+
+    def __init__(self, pipe):
+        QThread.__init__(self)
+        self.pipe = pipe
+
+    def __del__(self):
+        self.wait()
+
+    @pyqtSlot()
+    def run(self):
+        while True:
+            data = self.pipe.recv()
+            self.progress_val.emit(data)
+            if int(data) == 100:
+                break
 
 
 class StartUp(QDialog):
@@ -46,7 +68,10 @@ class SendFilesUI(QDialog):
         self.ui.setupUi(self)
         self.ui.labelProgress.setVisible(False)
         self.ui.progressBar.setVisible(False)
+        self.pipe = AioPipe(False)
+        self.progress_update = ProgressThread(self.pipe[0])
 
+        self.progress_update.progress_val.connect(self.update_progress_bar)
         self.ui.genIP.clicked.connect(self.generate_server_ip)
         self.ui.sendButton.clicked.connect(self.send_files)
         self.ui.toolButton.clicked.connect(self.open_file_dialog)
@@ -76,6 +101,9 @@ class SendFilesUI(QDialog):
         default_gateway = ni.gateways()["default"][2][1]
         return ni.ifaddresses(default_gateway)[ni.AF_INET][0]["addr"]
 
+    def update_progress_bar(self, val):
+        self.ui.progressBar.setValue(val)
+
     def send_files(self):
         self.ui.sendButton.setEnabled(False)
         self.ui.progressBar.setVisible(True)
@@ -87,23 +115,23 @@ class SendFilesUI(QDialog):
         asyncio.ensure_future(self.send_file(sender))
 
     async def send_file(self, sender):
+        self.progress_update.start()
+
         start_time = time()
-        thread_loop = asyncio.get_event_loop()
-        await thread_loop.run_in_executor(None, sender.send_data, self)
+        send_process = AioProcess(target=sender.send_data, args=(self.pipe[1],))
+        send_process.start()
+        await send_process.coro_join()
         end_time = time() - start_time
 
-        if sender.get_sent():
-            message = QMessageBox()
-            message.information(self, "Information", f"Transfer complete, time taken {round(end_time / 60, 2)} minutes")
+        self.progress_update.wait()
 
-        sender.set_sent(False)
+        message = QMessageBox()
+        message.information(self, "Information", f"Transfer complete, time taken {round(end_time / 60, 2)} minutes")
+
         self.ui.progressBar.setValue(0)
         self.ui.sendButton.setEnabled(True)
         self.ui.labelProgress.setVisible(False)
         self.ui.progressBar.setVisible(False)
-
-        def stopper(lp):
-            lp.stop()
 
 
 class ReceiveFilesUI(QDialog):
@@ -113,7 +141,10 @@ class ReceiveFilesUI(QDialog):
         self.ui.setupUi(self)
         self.ui.label_4.setVisible(False)
         self.ui.progressBar.setVisible(False)
+        self.pipe = AioPipe(False)
+        self.progress_update = ProgressThread(self.pipe[0])
 
+        self.progress_update.progress_val.connect(self.update_progress_bar)
         self.ui.receiveButton.clicked.connect(self.receive_files)
         self.ui.toolButton.clicked.connect(self.open_file_dialog)
 
@@ -123,6 +154,9 @@ class ReceiveFilesUI(QDialog):
         else:
             file_viewer = QFileDialog.getExistingDirectory(self, "Open folder to save", "/home")
         self.ui.lineEditSavePath.setText(file_viewer)
+
+    def update_progress_bar(self, val):
+        self.ui.progressBar.setValue(val)
 
     def receive_files(self):
         self.ui.receiveButton.setEnabled(False)
@@ -135,14 +169,20 @@ class ReceiveFilesUI(QDialog):
         asyncio.ensure_future(self.receive_file(receiver))
 
     async def receive_file(self, receiver):
+        self.progress_update.start()
+
         start_time = time()
-        thread_loop = asyncio.get_event_loop()
-        await thread_loop.run_in_executor(None, receiver.fetch_data, self)
+        receive_process = AioProcess(target=receiver.fetch_data, args=(self.pipe[1],))
+        receive_process.start()
+        await receive_process.coro_join()
         end_time = time() - start_time
 
-        if receiver.get_received():
-            message = QMessageBox()
-            message.information(self, "Information", f"Download complete, time taken {round(end_time / 60, 2)} minutes")
+        self.progress_update.wait()
+
+        receiver.save_location = self.pipe[0].recv()
+
+        message = QMessageBox()
+        message.information(self, "Information", f"Download complete, time taken {round(end_time / 60, 2)} minutes")
 
         self.ui.label_4.setText("Writing File")
         self.ui.progressBar.setValue(0)
@@ -150,16 +190,11 @@ class ReceiveFilesUI(QDialog):
         path = await receiver.write_data(receiver.save_location, self)
         rmtree(path)
 
-        receiver.set_received(False)
-
         self.ui.receiveButton.setEnabled(True)
         self.ui.label_4.setVisible(False)
         self.ui.progressBar.setVisible(False)
         self.ui.label_4.setText("Download in Progress")
         self.ui.progressBar.setValue(0)
-
-        def stopper(lp):
-            lp.stop()
 
 
 if __name__ == "__main__":

@@ -10,10 +10,10 @@ import os
 import gc
 
 TEMP_LOCATION = ".asdkjasdkasdhlsadhsajdhlas"
-PROCESS_WORKERS = 8
-THREAD_WORKERS = 20
-BUFFER_SIZE = 32768
-USED_PORTS = 160
+PROCESS_WORKERS = 10
+THREAD_WORKERS = 10
+BUFFER_SIZE = 65536
+USED_PORTS = 200
 
 
 async def write_file_thread(location, data):
@@ -21,127 +21,113 @@ async def write_file_thread(location, data):
         await file.write(data)
 
 
-def receive_data_thread(port, ip, location, loop):
-    client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    client.connect((ip, port))
-
+async def receive_data_thread(port, ip, location):
     try:
+        client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        client.connect((ip, port))
         file_name = client.recv(10).decode("utf-8").strip()
-    except ConnectionResetError:
-        return
+    except (ConnectionResetError, ConnectionRefusedError):
+        return 0
 
     received_bytes = []
 
     while True:
-        temp = client.recv(8192)
+        temp = client.recv(BUFFER_SIZE)
         if temp:
             received_bytes.append(temp)
         else:
             break
 
-    data = b"".join(received_bytes)
+    client.close()
 
-    task = None
+    data = b"".join(received_bytes)
 
     if data:
         location = os.path.join(os.path.sep.join(location.split(os.path.sep)[:-1]),
                                 TEMP_LOCATION, file_name)
-        task = asyncio.ensure_future(write_file_thread(location, data), loop=loop)
+        await write_file_thread(location, data)
 
-    return len(data), task
+    return len(data)
 
 
-def receive_data_process(ports, ip, location):
-    threads = []
-    thread_lock = Lock()
-
+async def receive_data_process_async(ports, ip, location, event_loop):
     completed_bytes = ReceivedData()
 
-    event_loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(event_loop)
+    async def update_hook(future_list):
+        for val in future_list:
+            res = await val
+            if res:
+                completed_bytes.data += res
 
-    file_tasks = []
-
-    def update_hook(future):
-        res = future.result()
-        if res:
-            with thread_lock:
-                completed_bytes.data += res[0]
-                if res[1]:
-                    file_tasks.append(res[1])
+    futures = []
 
     with ThreadPoolExecutor(max_workers=THREAD_WORKERS) as thread_pool:
         for port in ports:
-            threads.append(thread_pool.submit(receive_data_thread, port, ip, location, event_loop))
-            threads[-1].add_done_callback(update_hook)
+            futures.append(await event_loop.run_in_executor(thread_pool, receive_data_thread,
+                                                            port, ip, location))
 
-    if file_tasks:
-        event_loop.run_until_complete(asyncio.wait(file_tasks))
+    await update_hook(futures)
 
-    del event_loop
-    del file_tasks
-    del threads
     del thread_pool
-    del thread_lock
 
     return completed_bytes.data
 
 
+def receive_data_process(ports, ip, location):
+    event_loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(event_loop)
+
+    return event_loop.run_until_complete(receive_data_process_async(ports, ip, location, event_loop))
+
+
 class ReceivedData:
-    def __init__(self):
+    def __init__(self, pipe=None):
+        self.pipe = pipe
         self.data = 0
 
 
 class Receiver(Client):
     def __init__(self, ip, save_file_path):
         super().__init__(ip, save_file_path)
-        self.__received = False
         self.save_location = ""
-
-    def set_received(self, val):
-        self.__received = val
-
-    def get_received(self):
-        return self.__received
+        self.ip = ip
 
     def get_file_name(self):
         _, file_name = os.path.split(self.save_file_location)
         return file_name
 
-    def fetch_data(self, ui_element):
-        IP = ui_element.ui.lineEditIP.text()
-
+    async def fetch_data_async(self, ip, connection_pipe, process_loop):
         client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        client.connect((IP, self.get_port()))
+        client.connect((ip, self.get_port()))
 
         header = client.recv(200)
-        vals = header.split()
-        size = int(vals[0])
-        file_name = " ".join([vals[i].decode("utf-8") for i in range(1, len(vals))])
+        val = header.split()
+        size = int(val[0])
+        file_name = " ".join([val[i].decode("utf-8") for i in range(1, len(val))])
         save_location = os.path.join(self.save_file_location, file_name)
 
-        futures = []
         ports = list(range(30000, 30000 + USED_PORTS))
 
         os.makedirs(os.path.join(os.path.sep.join(save_location.split(os.path.sep)[:-1]),
                                  TEMP_LOCATION), exist_ok=True)
 
-        r = ReceivedData()
+        r = ReceivedData(connection_pipe)
         process_lock = Manager().Lock()
 
-        def update_hook(future):
-            res = future.result()
+        def update_hook(value):
+            res = value
             if res:
                 with process_lock:
                     r.data += res
-                    ui_element.ui.progressBar.setValue((r.data / size) * 100)
+                    r.pipe.send((r.data / size) * 100)
 
         with ProcessPoolExecutor(max_workers=PROCESS_WORKERS) as executor:
             start = 0
             for i in range(int(math.ceil(size / (BUFFER_SIZE * THREAD_WORKERS)))):
                 end = start + THREAD_WORKERS
-                futures.append(executor.submit(receive_data_process, ports[start:end], IP, save_location))
-                futures[-1].add_done_callback(update_hook)
+                future = await process_loop.run_in_executor(executor, receive_data_process,
+                                                            ports[start:end], ip, save_location)
+                update_hook(future)
                 start = end
                 if end == USED_PORTS:
                     start = 0
@@ -149,11 +135,11 @@ class Receiver(Client):
         del executor
         del ports
         del process_lock
-        del futures
+
         gc.collect()
 
         self.save_location = save_location
-        self.set_received(True)
+        r.pipe.send(save_location)
 
     async def write_data(self, save_location, ui_element):
         async with aiofiles.open(save_location, mode="wb") as file:
@@ -168,3 +154,8 @@ class Receiver(Client):
                     await file.write(contents)
 
         return path
+
+    def fetch_data(self, pipe):
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        loop.run_until_complete(self.fetch_data_async(self.ip, pipe, loop))

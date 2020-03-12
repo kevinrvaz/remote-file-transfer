@@ -1,16 +1,17 @@
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 from interfaces.server import Server
 from multiprocessing import Manager
-from threading import Lock
+import aiofiles
+import asyncio
 import socket
 import os
 import gc
 
 
-PROCESS_WORKERS = 8
-THREAD_WORKERS = 20
-BUFFER_SIZE = 32768
-USED_PORTS = 160
+PROCESS_WORKERS = 10
+THREAD_WORKERS = 10
+BUFFER_SIZE = 65536
+USED_PORTS = 200
 
 
 def create_server(i, ip):
@@ -33,54 +34,56 @@ def send_data_thread(file_name, server, data):
     client, address = server.accept()
     client.send(bytes(f"{file_name:<{10}}", "utf-8"))
     client.send(data)
-
     return len(data)
 
 
-def send_data_process(file_name, servers, start, fn):
-    threads = []
-
+async def send_data_process_async(file_name, servers, start, fn, event_loop):
     completed_bytes = SentData()
 
-    thread_lock = Lock()
-
-    def update_hook(future):
-        res = future.result()
-        if res:
-            with thread_lock:
+    async def update_hook(future_list):
+        for val in future_list:
+            if type(val) == int:
+                res = val
+            else:
+                res = await val
+            if res:
                 completed_bytes.data += res
 
-    with ThreadPoolExecutor(max_workers=THREAD_WORKERS) as thread_pool:
-        for index, data in enumerate(fn(start), start=file_name):
-            threads.append(thread_pool.submit(send_data_thread, index, servers[index % THREAD_WORKERS],
-                                              data))
-            threads[-1].add_done_callback(update_hook)
+    futures = []
 
+    with ThreadPoolExecutor(max_workers=THREAD_WORKERS) as thread_pool:
+        index = file_name
+
+        async for data in fn(start):
+            futures.append(await event_loop.run_in_executor(thread_pool, send_data_thread,
+                                                            index, servers[index % THREAD_WORKERS], data))
+            index += 1
             del data
 
+    await update_hook(futures)
+
     del thread_pool
-    del thread_lock
-    del threads
 
     return completed_bytes.data
 
 
+def send_data_process(file_name, servers, start, fn):
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+
+    return loop.run_until_complete(send_data_process_async(file_name, servers, start, fn, loop))
+
+
 class SentData:
-    def __init__(self):
+    def __init__(self, pipe=None):
+        self.pipe = pipe
         self.data = 0
 
 
 class Sender(Server):
     def __init__(self, ip, file_location):
         super().__init__(ip, file_location)
-        self.__sent = False
         self.data = 0
-
-    def set_sent(self, val):
-        self.__sent = val
-
-    def get_sent(self):
-        return self.__sent
 
     def get_file_name(self):
         _, tail = os.path.split(self.file_location)
@@ -90,20 +93,20 @@ class Sender(Server):
         file_size = os.path.getsize(self.file_location)
         return file_size
 
-    def read_data(self, start):
-        with open(self.file_location, mode="rb") as file:
-            file.seek(start)
+    async def read_data(self, start):
+        async with aiofiles.open(self.file_location, mode="rb") as file:
+            await file.seek(start)
             sent_data = 0
             while True:
                 if sent_data >= (BUFFER_SIZE * THREAD_WORKERS):
                     break
-                data = file.read(BUFFER_SIZE)
+                data = await file.read(BUFFER_SIZE)
                 sent_data += len(data)
                 if not data or len(data) <= 0:
                     break
                 yield data
 
-    def send_data(self, ui_element):
+    async def send_data_async(self, connection_pipe, process_loop):
         server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         server.bind((self.ip, self.get_port()))
@@ -120,27 +123,25 @@ class Sender(Server):
         client.send(bytes(construct_header(file_size, file_name), "utf-8"))
         client.close()
 
-        futures = []
-
-        s = SentData()
+        s = SentData(connection_pipe)
         process_lock = Manager().Lock()
 
         servers = [create_server(i, self.ip) for i in range(USED_PORTS)]
 
-        def update_hook(future):
-            res = future.result()
+        def update_hook(value):
+            res = value
             if res:
                 with process_lock:
                     s.data += res
-                    ui_element.ui.progressBar.setValue((s.data / file_size) * 100)
+                    s.pipe.send((s.data / file_size) * 100)
 
         with ProcessPoolExecutor(max_workers=PROCESS_WORKERS) as executor:
             start = 0
             for file_name, chunk_start in enumerate(range(0, file_size, BUFFER_SIZE * THREAD_WORKERS)):
                 end = start + THREAD_WORKERS
-                futures.append(executor.submit(send_data_process, file_name * THREAD_WORKERS,
-                                               servers[start:end], chunk_start, self.read_data))
-                futures[-1].add_done_callback(update_hook)
+                future = await process_loop.run_in_executor(executor, send_data_process, file_name * THREAD_WORKERS,
+                                                            servers[start:end], chunk_start, self.read_data)
+                update_hook(future)
                 start = end
                 if end == USED_PORTS:
                     start = 0
@@ -148,9 +149,10 @@ class Sender(Server):
         del executor
         del process_lock
         del servers
-        del futures
 
         gc.collect()
 
-        if s.data != 0:
-            self.set_sent(True)
+    def send_data(self, pipe):
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        loop.run_until_complete(self.send_data_async(pipe, loop))
