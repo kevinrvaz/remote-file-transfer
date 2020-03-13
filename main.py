@@ -170,19 +170,19 @@ class ReceiveFilesUI(QDialog):
 
     async def receive_file(self, receiver):
         self.progress_update.start()
-
+        parent, child = AioPipe(False)
         start_time = time()
-        receive_process = AioProcess(target=receiver.fetch_data, args=(self.pipe[1],))
+        receive_process = AioProcess(target=receiver.fetch_data, args=(self.pipe[1], child))
         receive_process.start()
         await receive_process.coro_join()
         end_time = time() - start_time
 
         self.progress_update.wait()
 
-        receiver.save_location = self.pipe[0].recv()
-
         message = QMessageBox()
         message.information(self, "Information", f"Download complete, time taken {round(end_time / 60, 2)} minutes")
+
+        receiver.save_location = parent.recv()
 
         self.ui.label_4.setText("Writing File")
         self.ui.progressBar.setValue(0)

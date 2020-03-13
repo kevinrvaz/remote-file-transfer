@@ -6,10 +6,10 @@ import socket
 import os
 import gc
 
-PROCESS_WORKERS = 10
-ASYNC_POOL_SIZE = 10
+PROCESS_WORKERS = 4
+ASYNC_POOL_SIZE = 50
 BUFFER_SIZE = 65536
-USED_PORTS = 100
+USED_PORTS = 40
 
 
 def create_server(i, ip):
@@ -61,6 +61,8 @@ async def send_data_process_async(file_name, server, start, fn, event_loop):
 
     async with coroutine:
         await coroutine.wait_closed()
+
+    del coroutine
 
     return completed_bytes.data
 
@@ -120,6 +122,7 @@ class Sender(Server):
 
         client.send(bytes(construct_header(file_size, file_name), "utf-8"))
         client.close()
+        server.close()
 
         s = SentData(connection_pipe)
 
@@ -137,8 +140,6 @@ class Sender(Server):
                                                             servers[file_name % USED_PORTS], chunk_start,
                                                             self.read_data)
                 update_hook(future)
-
-        await asyncio.sleep(1)
 
         del executor
         del servers

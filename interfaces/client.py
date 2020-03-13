@@ -11,7 +11,7 @@ class Client(abc.ABC):
         return self.__port
 
     @abc.abstractmethod
-    def fetch_data(self, ui_element):
+    def fetch_data(self, pipe1, pipe2):
         pass
 
     @abc.abstractmethod
