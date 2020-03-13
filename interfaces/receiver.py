@@ -1,19 +1,15 @@
-from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
+from concurrent.futures import ProcessPoolExecutor
 from interfaces.client import Client
-from multiprocessing import Manager
-from threading import Lock
 import aiofiles
 import asyncio
-import socket
-import math
 import os
 import gc
 
 TEMP_LOCATION = ".asdkjasdkasdhlsadhsajdhlas"
 PROCESS_WORKERS = 10
-THREAD_WORKERS = 10
+ASYNC_POOL_SIZE = 10
 BUFFER_SIZE = 65536
-USED_PORTS = 200
+USED_PORTS = 100
 
 
 async def write_file_thread(location, data):
@@ -21,24 +17,23 @@ async def write_file_thread(location, data):
         await file.write(data)
 
 
-async def receive_data_thread(port, ip, location):
+async def receive_data_thread(port, ip, location, loop):
     try:
-        client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        client.connect((ip, port))
-        file_name = client.recv(10).decode("utf-8").strip()
+        reader, writer = await asyncio.open_connection(ip, port, loop=loop)
+        file_name = await reader.read(10)
+        file_name = file_name.decode("utf-8").strip()
     except (ConnectionResetError, ConnectionRefusedError):
         return 0
 
     received_bytes = []
 
     while True:
-        temp = client.recv(BUFFER_SIZE)
+        temp = await reader.read()
         if temp:
             received_bytes.append(temp)
         else:
             break
-
-    client.close()
+    writer.close()
 
     data = b"".join(received_bytes)
 
@@ -50,34 +45,27 @@ async def receive_data_thread(port, ip, location):
     return len(data)
 
 
-async def receive_data_process_async(ports, ip, location, event_loop):
+async def receive_data_process_async(port, ip, location, event_loop):
     completed_bytes = ReceivedData()
 
-    async def update_hook(future_list):
-        for val in future_list:
-            res = await val
-            if res:
-                completed_bytes.data += res
+    def update_hook(future):
+        res = future.result()
+        if res:
+            completed_bytes.data += res
 
-    futures = []
+    task = asyncio.create_task(receive_data_thread(port, ip, location, event_loop))
+    task.add_done_callback(update_hook)
 
-    with ThreadPoolExecutor(max_workers=THREAD_WORKERS) as thread_pool:
-        for port in ports:
-            futures.append(await event_loop.run_in_executor(thread_pool, receive_data_thread,
-                                                            port, ip, location))
-
-    await update_hook(futures)
-
-    del thread_pool
+    await task
 
     return completed_bytes.data
 
 
-def receive_data_process(ports, ip, location):
+def receive_data_process(port, ip, location):
     event_loop = asyncio.new_event_loop()
     asyncio.set_event_loop(event_loop)
 
-    return event_loop.run_until_complete(receive_data_process_async(ports, ip, location, event_loop))
+    return event_loop.run_until_complete(receive_data_process_async(port, ip, location, event_loop))
 
 
 class ReceivedData:
@@ -97,13 +85,15 @@ class Receiver(Client):
         return file_name
 
     async def fetch_data_async(self, ip, connection_pipe, process_loop):
-        client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        client.connect((ip, self.get_port()))
+        reader, writer = await asyncio.open_connection(ip, self.get_port(), loop=process_loop)
+        header = await reader.read(200)
 
-        header = client.recv(200)
+        writer.close()
+
         val = header.split()
         size = int(val[0])
         file_name = " ".join([val[i].decode("utf-8") for i in range(1, len(val))])
+
         save_location = os.path.join(self.save_file_location, file_name)
 
         ports = list(range(30000, 30000 + USED_PORTS))
@@ -112,30 +102,23 @@ class Receiver(Client):
                                  TEMP_LOCATION), exist_ok=True)
 
         r = ReceivedData(connection_pipe)
-        process_lock = Manager().Lock()
 
         def update_hook(value):
             res = value
             if res:
-                with process_lock:
-                    r.data += res
-                    r.pipe.send((r.data / size) * 100)
+                r.data += res
+                r.pipe.send((r.data / size) * 100)
 
         with ProcessPoolExecutor(max_workers=PROCESS_WORKERS) as executor:
-            start = 0
-            for i in range(int(math.ceil(size / (BUFFER_SIZE * THREAD_WORKERS)))):
-                end = start + THREAD_WORKERS
+            for i, _ in enumerate(range(0, size, BUFFER_SIZE)):
                 future = await process_loop.run_in_executor(executor, receive_data_process,
-                                                            ports[start:end], ip, save_location)
+                                                            ports[i % USED_PORTS], ip, save_location)
                 update_hook(future)
-                start = end
-                if end == USED_PORTS:
-                    start = 0
 
         del executor
         del ports
-        del process_lock
 
+        await asyncio.sleep(1)
         gc.collect()
 
         self.save_location = save_location

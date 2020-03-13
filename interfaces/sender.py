@@ -1,26 +1,19 @@
-from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
+from concurrent.futures import ProcessPoolExecutor
 from interfaces.server import Server
-from multiprocessing import Manager
 import aiofiles
 import asyncio
 import socket
 import os
 import gc
 
-
 PROCESS_WORKERS = 10
-THREAD_WORKERS = 10
+ASYNC_POOL_SIZE = 10
 BUFFER_SIZE = 65536
-USED_PORTS = 200
+USED_PORTS = 100
 
 
 def create_server(i, ip):
-    temp_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    temp_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    temp_socket.bind((ip, i + 30000))
-    temp_socket.listen(10)
-
-    return temp_socket
+    return ip, i + 30000
 
 
 def construct_header(size, file_name):
@@ -30,48 +23,53 @@ def construct_header(size, file_name):
     return header
 
 
-def send_data_thread(file_name, server, data):
-    client, address = server.accept()
-    client.send(bytes(f"{file_name:<{10}}", "utf-8"))
-    client.send(data)
-    return len(data)
+async def send_data_thread(reader, writer, file_name, start, fn):
+    writer.write(bytes(f"{file_name:<{10}}", "utf-8"))
+    await writer.drain()
+    sent_data = 0
+
+    async for data in fn(start):
+        sent_data += len(data)
+        writer.write(data)
+        await writer.drain()
+        del data
+
+    writer.close()
+
+    return sent_data
 
 
-async def send_data_process_async(file_name, servers, start, fn, event_loop):
+async def send_data_process_async(file_name, server, start, fn, event_loop):
+    def update_hook(val):
+        res = val.result()
+        if res:
+            completed_bytes.data += res
+            completed_bytes.pipe.close()
+
+    def add_hook(r, w, name, pos, callback):
+        temp = send_data_thread(r, w, name, pos, callback)
+        task = asyncio.create_task(temp)
+        task.add_done_callback(update_hook)
+
     completed_bytes = SentData()
 
-    async def update_hook(future_list):
-        for val in future_list:
-            if type(val) == int:
-                res = val
-            else:
-                res = await val
-            if res:
-                completed_bytes.data += res
+    ip, port = server
 
-    futures = []
+    coroutine = await asyncio.start_server(lambda r, w: add_hook(r, w, file_name, start, fn),
+                                           ip, port, loop=event_loop, reuse_address=True)
+    completed_bytes.pipe = coroutine
 
-    with ThreadPoolExecutor(max_workers=THREAD_WORKERS) as thread_pool:
-        index = file_name
-
-        async for data in fn(start):
-            futures.append(await event_loop.run_in_executor(thread_pool, send_data_thread,
-                                                            index, servers[index % THREAD_WORKERS], data))
-            index += 1
-            del data
-
-    await update_hook(futures)
-
-    del thread_pool
+    async with coroutine:
+        await coroutine.wait_closed()
 
     return completed_bytes.data
 
 
-def send_data_process(file_name, servers, start, fn):
+def send_data_process(file_name, server, start, fn):
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
 
-    return loop.run_until_complete(send_data_process_async(file_name, servers, start, fn, loop))
+    return loop.run_until_complete(send_data_process_async(file_name, server, start, fn, loop))
 
 
 class SentData:
@@ -98,7 +96,7 @@ class Sender(Server):
             await file.seek(start)
             sent_data = 0
             while True:
-                if sent_data >= (BUFFER_SIZE * THREAD_WORKERS):
+                if sent_data >= (BUFFER_SIZE * ASYNC_POOL_SIZE):
                     break
                 data = await file.read(BUFFER_SIZE)
                 sent_data += len(data)
@@ -124,30 +122,25 @@ class Sender(Server):
         client.close()
 
         s = SentData(connection_pipe)
-        process_lock = Manager().Lock()
 
         servers = [create_server(i, self.ip) for i in range(USED_PORTS)]
 
         def update_hook(value):
             res = value
             if res:
-                with process_lock:
-                    s.data += res
-                    s.pipe.send((s.data / file_size) * 100)
+                s.data += res
+                s.pipe.send((s.data / file_size) * 100)
 
         with ProcessPoolExecutor(max_workers=PROCESS_WORKERS) as executor:
-            start = 0
-            for file_name, chunk_start in enumerate(range(0, file_size, BUFFER_SIZE * THREAD_WORKERS)):
-                end = start + THREAD_WORKERS
-                future = await process_loop.run_in_executor(executor, send_data_process, file_name * THREAD_WORKERS,
-                                                            servers[start:end], chunk_start, self.read_data)
+            for file_name, chunk_start in enumerate(range(0, file_size, BUFFER_SIZE * ASYNC_POOL_SIZE)):
+                future = await process_loop.run_in_executor(executor, send_data_process, file_name * ASYNC_POOL_SIZE,
+                                                            servers[file_name % USED_PORTS], chunk_start,
+                                                            self.read_data)
                 update_hook(future)
-                start = end
-                if end == USED_PORTS:
-                    start = 0
+
+        await asyncio.sleep(1)
 
         del executor
-        del process_lock
         del servers
 
         gc.collect()
@@ -155,4 +148,5 @@ class Sender(Server):
     def send_data(self, pipe):
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
+
         loop.run_until_complete(self.send_data_async(pipe, loop))
