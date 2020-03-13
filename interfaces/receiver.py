@@ -1,15 +1,15 @@
-from concurrent.futures import ProcessPoolExecutor
 from interfaces.client import Client
+from threading import Lock
+from queue import Queue
 import aiofiles
 import asyncio
 import os
 import gc
 
 TEMP_LOCATION = ".asdkjasdkasdhlsadhsajdhlas"
-PROCESS_WORKERS = 4
 ASYNC_POOL_SIZE = 50
 BUFFER_SIZE = 65536
-USED_PORTS = 40
+USED_PORTS = 80
 
 
 async def write_file_thread(location, data):
@@ -64,14 +64,11 @@ async def receive_data_process_async(port, ip, location, event_loop):
 
     await task
 
-    return completed_bytes.data
+    return completed_bytes.data, port
 
 
-def receive_data_process(port, ip, location):
-    event_loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(event_loop)
-
-    return event_loop.run_until_complete(receive_data_process_async(port, ip, location, event_loop))
+async def receive_data_process(port, ip, location, event_loop):
+    return await receive_data_process_async(port, ip, location, event_loop)
 
 
 class ReceivedData:
@@ -104,29 +101,52 @@ class Receiver(Client):
         file_name = " ".join([val[i].decode("utf-8") for i in range(1, len(val))])
 
         save_location = os.path.join(self.save_file_location, file_name)
+        ports = Queue()
 
-        ports = list(range(30000, 30000 + USED_PORTS))
+        for port in list(range(30000, 30000 + USED_PORTS)):
+            ports.put(port)
 
         os.makedirs(os.path.join(os.path.sep.join(save_location.split(os.path.sep)[:-1]),
                                  TEMP_LOCATION), exist_ok=True)
 
         r = ReceivedData(connection_pipe)
 
+        lock = Lock()
+
         def update_hook(value):
-            res = value
+            res = value.result()
             if res:
-                r.data += res
-                r.pipe.send((r.data / size) * 100)
+                with lock:
+                    r.data += res[0]
+                    ports.put(res[1])
+                    r.pipe.send((r.data / size) * 100)
 
-        with ProcessPoolExecutor(max_workers=PROCESS_WORKERS) as executor:
-            for i, _ in enumerate(range(0, size, BUFFER_SIZE * ASYNC_POOL_SIZE)):
-                future = await process_loop.run_in_executor(executor, receive_data_process,
-                                                            ports[i % USED_PORTS], ip, save_location)
-                update_hook(future)
-                if r.data == size:
-                    break
+        tasks = []
 
-        del executor
+        for i, _ in enumerate(range(0, size, BUFFER_SIZE)):
+            if ports.qsize() != 0:
+                port = ports.get()
+                temp_tasks = []
+                while len(tasks) != 0:
+                    temp_tasks.append(tasks.pop())
+                    if len(temp_tasks) == 10:
+                        break
+                await asyncio.gather(*temp_tasks)
+            else:
+                await asyncio.gather(*tasks)
+                tasks = []
+                port = ports.get()
+
+            task = asyncio.create_task(receive_data_process(port, ip,
+                                                            save_location, process_loop))
+            task.add_done_callback(update_hook)
+            tasks.append(task)
+
+            if r.data == size:
+                break
+
+        await asyncio.gather(*tasks)
+
         del ports
 
         gc.collect()
@@ -152,3 +172,5 @@ class Receiver(Client):
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         loop.run_until_complete(self.fetch_data_async(self.ip, pipe, child, loop))
+
+        del loop
