@@ -12,11 +12,11 @@ BUFFER_SIZE = 65536
 USED_PORTS = 50
 
 
-async def write_file_thread(location, data, mode="wb"):
+async def write_file_thread(location, data, mode="wb", loop=None):
     if os.path.exists(location):
         mode = "ab"
 
-    async with aiofiles.open(location, mode=mode) as file:
+    async with aiofiles.open(location, mode=mode, loop=loop) as file:
         await file.write(data)
 
 
@@ -43,7 +43,7 @@ async def receive_data_thread(port, ip, location, loop):
         temp = await reader.read(BUFFER_SIZE)
         if temp:
             received_bytes += len(temp)
-            await write_file_thread(location, temp)
+            await write_file_thread(location, temp, "wb", loop)
         else:
             break
 
@@ -125,7 +125,8 @@ class Receiver(Client):
                     done, ser = await f
                     r.data += done
                     ports.put(ser)
-                    await r.pipe.coro_send((r.data / size) * 100)
+                    if done:
+                        await r.pipe.coro_send((r.data / size) * 100)
 
                 tasks = []
                 port = ports.get()
@@ -141,7 +142,8 @@ class Receiver(Client):
             for f in asyncio.as_completed(tasks, loop=process_loop):
                 done, _ = await f
                 r.data += done
-                await r.pipe.coro_send((r.data / size) * 100)
+                if done:
+                    await r.pipe.coro_send((r.data / size) * 100)
 
         del ports
 

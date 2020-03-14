@@ -140,7 +140,8 @@ class Sender(Server):
                     done, ser = await f
                     s.data += done
                     servers.put(ser)
-                    await s.pipe.coro_send((s.data / file_size) * 100)
+                    if done:
+                        await s.pipe.coro_send((s.data / file_size) * 100)
 
                 tasks = []
                 server = servers.get()
@@ -154,7 +155,8 @@ class Sender(Server):
             for f in asyncio.as_completed(tasks, loop=process_loop):
                 done, _ = await f
                 s.data += done
-                await s.pipe.coro_send((s.data / file_size) * 100)
+                if done:
+                    await s.pipe.coro_send((s.data / file_size) * 100)
 
         del servers
         del tasks
