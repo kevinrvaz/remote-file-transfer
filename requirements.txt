@@ -1,3 +1,4 @@
+uvloop
 aioprocessing
 aiofiles==0.4.0
 netifaces==0.10.9

@@ -1,15 +1,15 @@
 from interfaces.server import Server
-from threading import Lock
 from queue import Queue
 import aiofiles
 import asyncio
+import uvloop
 import socket
 import os
 import gc
 
-ASYNC_POOL_SIZE = 50
+ASYNC_POOL_SIZE = 500
 BUFFER_SIZE = 65536
-USED_PORTS = 80
+USED_PORTS = 50
 
 
 def construct_header(size, file_name):
@@ -31,6 +31,10 @@ async def send_data_thread(reader, writer, file_name, start, fn):
         del data
 
     writer.close()
+    await writer.wait_closed()
+
+    del writer
+    del reader
 
     return sent_data
 
@@ -108,7 +112,7 @@ class Sender(Server):
         file_size = int(self.get_file_size())
         file_name = self.get_file_name()
 
-        print(file_name, file_size)
+        print("Sending ", file_name, "of size", file_size, "bytes")
 
         client, address = server.accept()
         print(f"connection established with {address}")
@@ -117,45 +121,40 @@ class Sender(Server):
         client.close()
         server.close()
 
+        del server
+        del client
+
         s = SentData(connection_pipe)
 
         servers = Queue()
         for server in list(range(30000, 30000 + USED_PORTS)):
             servers.put((self.ip, server))
 
-        lock = Lock()
-
-        def update_hook(value):
-            res = value.result()
-            if res:
-                with lock:
-                    s.data += res[0]
-                    s.pipe.send((s.data / file_size) * 100)
-                    servers.put(res[1])
-
         tasks = []
 
         for file_name, chunk_start in enumerate(range(0, file_size, BUFFER_SIZE * ASYNC_POOL_SIZE)):
             if servers.qsize() != 0:
                 server = servers.get()
-                temp_tasks = []
-                while len(tasks) != 0:
-                    temp_tasks.append(tasks.pop())
-                    if len(temp_tasks) == 10:
-                        break
-                await asyncio.gather(*temp_tasks)
             else:
-                await asyncio.gather(*tasks)
+                for f in asyncio.as_completed(tasks, loop=process_loop):
+                    done, ser = await f
+                    s.data += done
+                    servers.put(ser)
+                    await s.pipe.coro_send((s.data / file_size) * 100)
+
                 tasks = []
                 server = servers.get()
 
             task = asyncio.create_task(send_data_process(file_name * ASYNC_POOL_SIZE,
                                                          server, chunk_start,
                                                          self.read_data, process_loop))
-            task.add_done_callback(update_hook)
             tasks.append(task)
 
-        await asyncio.gather(*tasks)
+        if tasks:
+            for f in asyncio.as_completed(tasks, loop=process_loop):
+                done, _ = await f
+                s.data += done
+                await s.pipe.coro_send((s.data / file_size) * 100)
 
         del servers
         del tasks
@@ -163,9 +162,7 @@ class Sender(Server):
         gc.collect()
 
     def send_data(self, pipe):
-        loop = asyncio.new_event_loop()
+        loop = uvloop.new_event_loop()
         asyncio.set_event_loop(loop)
-
         loop.run_until_complete(self.send_data_async(pipe, loop))
-
         del loop

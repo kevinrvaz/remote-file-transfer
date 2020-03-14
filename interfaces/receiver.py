@@ -1,19 +1,22 @@
 from interfaces.client import Client
-from threading import Lock
 from queue import Queue
 import aiofiles
 import asyncio
+import uvloop
 import os
 import gc
 
 TEMP_LOCATION = ".asdkjasdkasdhlsadhsajdhlas"
-ASYNC_POOL_SIZE = 50
+ASYNC_POOL_SIZE = 500
 BUFFER_SIZE = 65536
-USED_PORTS = 80
+USED_PORTS = 50
 
 
-async def write_file_thread(location, data):
-    async with aiofiles.open(location, mode="wb") as file:
+async def write_file_thread(location, data, mode="wb"):
+    if os.path.exists(location):
+        mode = "ab"
+
+    async with aiofiles.open(location, mode=mode) as file:
         await file.write(data)
 
 
@@ -31,24 +34,25 @@ async def receive_data_thread(port, ip, location, loop):
 
     file_name = await reader.read(10)
     file_name = file_name.decode("utf-8").strip()
-    received_bytes = []
+    location = os.path.join(os.path.sep.join(location.split(os.path.sep)[:-1]),
+                            TEMP_LOCATION, file_name)
+
+    received_bytes = 0
 
     while True:
-        temp = await reader.read()
+        temp = await reader.read(BUFFER_SIZE)
         if temp:
-            received_bytes.append(temp)
+            received_bytes += len(temp)
+            await write_file_thread(location, temp)
         else:
             break
+
     writer.close()
 
-    data = b"".join(received_bytes)
+    del writer
+    del reader
 
-    if data:
-        location = os.path.join(os.path.sep.join(location.split(os.path.sep)[:-1]),
-                                TEMP_LOCATION, file_name)
-        await write_file_thread(location, data)
-
-    return len(data)
+    return received_bytes
 
 
 async def receive_data_process_async(port, ip, location, event_loop):
@@ -111,48 +115,39 @@ class Receiver(Client):
 
         r = ReceivedData(connection_pipe)
 
-        lock = Lock()
-
-        def update_hook(value):
-            res = value.result()
-            if res:
-                with lock:
-                    r.data += res[0]
-                    ports.put(res[1])
-                    r.pipe.send((r.data / size) * 100)
-
         tasks = []
 
         for i, _ in enumerate(range(0, size, BUFFER_SIZE)):
             if ports.qsize() != 0:
                 port = ports.get()
-                temp_tasks = []
-                while len(tasks) != 0:
-                    temp_tasks.append(tasks.pop())
-                    if len(temp_tasks) == 10:
-                        break
-                await asyncio.gather(*temp_tasks)
             else:
-                await asyncio.gather(*tasks)
+                for f in asyncio.as_completed(tasks, loop=process_loop):
+                    done, ser = await f
+                    r.data += done
+                    ports.put(ser)
+                    await r.pipe.coro_send((r.data / size) * 100)
+
                 tasks = []
                 port = ports.get()
 
             task = asyncio.create_task(receive_data_process(port, ip,
                                                             save_location, process_loop))
-            task.add_done_callback(update_hook)
             tasks.append(task)
 
             if r.data == size:
                 break
 
-        await asyncio.gather(*tasks)
+        if tasks:
+            for f in asyncio.as_completed(tasks, loop=process_loop):
+                done, _ = await f
+                r.data += done
+                await r.pipe.coro_send((r.data / size) * 100)
 
         del ports
 
         gc.collect()
 
-        self.save_location = save_location
-        child_pipe.send(save_location)
+        await child_pipe.coro_send(save_location)
 
     async def write_data(self, save_location, ui_element):
         async with aiofiles.open(save_location, mode="wb") as file:
@@ -169,8 +164,7 @@ class Receiver(Client):
         return path
 
     def fetch_data(self, pipe, child):
-        loop = asyncio.new_event_loop()
+        loop = uvloop.new_event_loop()
         asyncio.set_event_loop(loop)
         loop.run_until_complete(self.fetch_data_async(self.ip, pipe, child, loop))
-
         del loop
