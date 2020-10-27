@@ -1,6 +1,6 @@
 uvloop
 aioprocessing
-aiofiles==0.5.0
+aiofiles==0.6.0
 netifaces==0.10.9
 PyQt5==5.15.0
 PyQt5-sip==4.19.19
